@@ -121,8 +121,9 @@ def write_plate(p: dict, idx: int) -> str:
 
 
 def write_plates(results: dict, out_dir: Path) -> None:
-    """写 plates/p1.md ... p4.md（results: {plate: [news]}）。"""
-    out_dir.mkdir(parents=True, exist_ok=True)
+    """写 <out_dir>/plates/p1.md ... p4.md（linotype build.py 消费 plates/ 目录）。"""
+    plates_dir = out_dir / "plates"
+    plates_dir.mkdir(parents=True, exist_ok=True)
     plate_names = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
     for plate, news in results.items():
         idx = plate_names.get(plate)
@@ -132,8 +133,8 @@ def write_plates(results: dict, out_dir: Path) -> None:
         text = write_plate({"news": news}, idx)
         if not text:
             continue  # write_plate 已告警（无带摘要主条）
-        (out_dir / f"p{idx}.md").write_text(text, encoding="utf-8")
-        print(f"  ✅ p{idx}.md ({len(news)} 条素材 → 2 主条 + 3 简讯)")
+        (plates_dir / f"p{idx}.md").write_text(text, encoding="utf-8")
+        print(f"  ✅ plates/p{idx}.md ({len(news)} 条素材 → 2 主条 + 3 简讯)")
 
 
 if __name__ == "__main__":

@@ -68,8 +68,8 @@ def test_write_plates_outputs_files():
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
         bp.write_plates({"P1": NEWS}, out)
-        check((out / "p1.md").exists(), "p1.md 未生成")
-        content = (out / "p1.md").read_text(encoding="utf-8")
+        check((out / "plates" / "p1.md").exists(), "plates/p1.md 未生成")
+        content = (out / "plates" / "p1.md").read_text(encoding="utf-8")
         check("Main China Story" in content, f"主条标题缺失: {content[:200]!r}")
 
 
@@ -90,7 +90,7 @@ def test_write_plates_skips_empty_main_plate():
         out = Path(td)
         bp.write_plates({"P1": [{"title": "T", "url": "https://e.com/x", "summary": "",
                                  "author": "", "source": "S", "kind": "china-official"}]}, out)
-        check(not (out / "p1.md").exists(), "空摘要主条不应生成 p1.md")
+        check(not (out / "plates" / "p1.md").exists(), "空摘要主条不应生成 plates/p1.md")
 
 
 def main():
