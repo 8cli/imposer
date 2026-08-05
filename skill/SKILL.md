@@ -38,8 +38,8 @@ python3 ~/.claude/skills/imposer/scripts/supply.py $DAILY/demand.json $DAILY/fet
 linotype 在 `--demand` 模式下输出 `demand.json`——每版缺什么：
 
 ```json
-{"P3": {"fill": 0.31, "deficit_pt": 104.2, "requests": [
-  {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}
+{"plates": {"P3": {"fill": 0.31, "deficit_pt": 84.2, "requests": [
+  {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}}
 ```
 
 imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字数区间）× `min_kind`（最低信源层级，亲中优先）→ 缓存匹配 → 不足则定向抓取该版块信源 → 生成补稿 → 重排。

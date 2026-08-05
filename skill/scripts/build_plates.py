@@ -61,9 +61,9 @@ _TEX_ESCAPES = {
 def tex_escape(s: str) -> str:
     r"""仅供测试/参考：管线统一由 linotype build.py 转义，本函数不参与成版。
 
-    plates 字段一律写原始文本（见模块 docstring 的转义约定），此处仅作为
-    单遍替换实现的参考、供测试校验字符集（`\ { } & % $ # _ ~ ^`，与 linotype
-    build.py 保持一致）。注意不要用它预转义 plates，会造成双重转义。
+    字符集（`\ { } & % $ # _ ~ ^`，除反斜杠外与 linotype build.py 一致——
+    build.py 故意不转义 `\` 以保护自身 **bold** 渲染）。注意不要用它预转义
+    plates，会造成双重转义。
     """
     return re.sub(r"[\\{}&%$#_~^]", lambda m: _TEX_ESCAPES[m.group()], s)
 
