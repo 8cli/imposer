@@ -1,4 +1,4 @@
-# compositor — 英文日报编排 skill（与 linotype 双向互动）
+# imposer — 英文日报编排 skill（与 linotype 双向互动）
 
 > 日期：2026-08-05
 > 状态：设计已获用户批准（逐节确认）
@@ -8,12 +8,12 @@
 
 ## 一、定位与命名
 
-**compositor** 是 linotype 的排字工——热金属排版时代操作 Linotype 铸排机、读它出的样张并调整版面的岗位。职责对应：
+**imposer** 是 linotype 的排字工——热金属排版时代操作 Linotype 铸排机、读它出的样张并调整版面的岗位。职责对应：
 
 - **组织材料**（copy desk 职能）：从权威信源采集、摘录、组织成 linotype 消费的 `plates/*.md`
 - **响应信号**（stonehand 职能）：读取 linotype 的排版信号（Overfull / fill / 视觉诊断），自动调整并重排
 
-**核心设计原则**：材料组织与版面纪律耦合——compositor 天生知道 linotype 的字段格式、篇幅预算、中长篇+简讯配比，所以排出的材料第一轮就接近版面，反馈环只是微调。
+**核心设计原则**：材料组织与版面纪律耦合——imposer 天生知道 linotype 的字段格式、篇幅预算、中长篇+简讯配比，所以排出的材料第一轮就接近版面，反馈环只是微调。
 
 ## 二、报纸结构（固定 4 版）
 
@@ -62,7 +62,7 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 |---|---|---|
 | Washington Post | RSS（主站超时） | `feeds.washingtonpost.com/rss/world` |
 | New York Times | RSS | `rss.nytimes.com/services/xml/rss/nyt/World.xml` |
-| VOA（美国之音） | 主页 + RSS | `voanews.com` + `voanews.com/rss` |
+| VOA（美国之音） | 主页 + RSS | `voanews.com` + `voanews.com/rss/`（注意尾斜杠） |
 | ABC News | 主页抓取 | `abcnews.go.com` |
 
 **编辑原则**：同一事件多源对照时，优先中国官方口径；西方主流仅作信息补充，付费墙截断退 RSS 摘要。
@@ -172,31 +172,63 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 | 信源 | 方式 | URL |
 |---|---|---|
 | China Daily | RSS | `chinadaily.com.cn/rss/china_rss.xml` |
-| SCMP | RSS | `scmp.com/rss/91/feed` |
+| SCMP（香港英文，Alibaba 旗下） | RSS | `scmp.com/rss/91/feed`（kind=independent） |
 | Global Times | 主页抓取 | `globaltimes.cn` |
 | Xinhua | 主页抓取 | `english.news.cn` |
 
 **已排除**：BBC / NYT / Kyiv Independent（对华不友好）；AP 降级为备用（无 RSS，主页抓取不稳定）；中国军网（海外访问超时 000）。
 
-## 四、与 linotype 的信号协议（灵魂）
+## 四、与 linotype 的需求-供给契约（灵魂）
 
-compositor 读取 linotype 吐出的每一个信号并响应：
+imposer 与 linotype 是**需求方-供给方**关系（版面编辑 ↔ 文稿台）：
+**linotype 缺内容时下"补稿单"（demand.json），imposer 按规格找稿交稿**——比单向信号更精确、更良性。
 
-| linotype 信号 | 含义 | compositor 响应 |
+### linotype 侧：发出需求信号（build.py 增强，`--demand` 输出）
+
+autofit 收敛后，linotype build.py 分析每版 fill，输出 `demand.json`：
+
+```json
+{
+  "P3": {
+    "fill": 0.31,
+    "deficit_pt": 104.2,
+    "requests": [
+      {"type": "brief",     "count": 2, "words": [60, 90],   "topic": "space", "min_kind": "agency"},
+      {"type": "deep_dive", "count": 1, "words": [400, 600], "topic": "space", "min_kind": "thinktank"}
+    ]
+  }
+}
+```
+
+- `deficit_pt = (FILL_MIN − fill) × contentH`——缺多少 pt 内容
+- 需求类型按缺口估算：`<100pt → briefs`；`100–300pt → 1 main + briefs`；`>300pt → deep_dive + main + briefs`
+- `topic` 由版块映射（P1 world/military, P2 ai/tech, P3 space, P4 china-tech）；`min_kind` 按版块主信源层级
+- **向后兼容**：`--demand` 是新增可选输出，不影响既有 autofit/排版行为（linotype 25 项回归必须保持全绿）
+
+### imposer 侧：供给模块（supply.py）
+
+```
+读 demand.json → 素材缓存匹配（topic × words × min_kind）
+  → 缓存不足 → 定向抓取该版块信源
+  → 按规格生成补稿 → 更新 plates → 重排
+  → 需求收敛（0 请求 且 0 Overfull）或 2 轮上限
+```
+
+### 其余信号响应（保留）
+
+| linotype 信号 | 含义 | imposer 响应 |
 |---|---|---|
-| `Plate content: X/Y`（typeout） | 版填充率 | fill < 45% → 增补简讯 / 扩写段落 |
 | `Overfull plate: content X>Y`（typeout） | 溢出 | 裁段（末段起）→ 换次条 → 减简讯 |
 | autofit 收敛成功 | 版面 OK | 进入 QA |
 | autofit 失败（历史最佳报告） | 边界内放不下 | 接受 + 报告用户人工决策 |
 | `--visual` 像素诊断（空白带） | 视觉稀疏 | 调配比 / 建议加图 |
 
-**响应机制（反馈环，≤2 轮防死循环）**：
+**反馈环（≤2 轮防死循环）**：
 
 ```
-成版 → linotype 排版（autofit 默认开）
-  → 解析 build.py 输出 + .log（Plate content / Overfull / autofit 报告）
-  → 版面健康报告（每版 fill + overfull 状态）
-  → 不达标？按上表自动调整 plates/*.md → 重排（第 2 轮）
+成版 → linotype 排版（--demand 输出 demand.json）
+  → 版面健康报告（fill / overfull / requests）
+  → 有 requests？supply 按单补稿 → 重排（第 2 轮）
   → 仍不达标？停止 + 诚实报告给用户
 ```
 
@@ -209,7 +241,7 @@ compositor 读取 linotype 吐出的每一个信号并响应：
 ├── sources/          # 信源归档：每版一个 md（URL/记者/站点/摘录原文）
 ├── plates/           # 生成的 p1-p4.md（linotype 消费）
 ├── out.pdf + out.log + out.tex + layout.json
-└── compositor.log    # 日报工作日志（搜索→摘录→调整→QA 全程）
+└── imposer.log    # 日报工作日志（搜索→摘录→调整→QA 全程）
 ```
 
 **一键流程**（用户喊"做今天的日报"）：
@@ -228,18 +260,19 @@ compositor 读取 linotype 吐出的每一个信号并响应：
 ## 六、目录结构与文件清单
 
 ```
-~/.claude/skills/compositor/          ← skill 本体
-├── SKILL.md                          # compositor 手册（编排者模式，linotype 知识内嵌）
+~/.claude/skills/imposer/          ← skill 本体
+├── SKILL.md                          # imposer 手册（编排者模式，linotype 知识内嵌）
 ├── scripts/
 │   ├── fetch_sources.py              # RSS 拉取 + 主页抓取（多信源并行）
-│   ├── build_plates.py               # 素材 → plates/p1-p4.md（字段格式 + 归属）
-│   └── parse_signals.py              # .log/build.py 输出 → 版面健康报告（结构化）
+│   ├── parse_demand.py               # 读 demand.json + .log → 版面健康报告 + 需求清单
+│   ├── supply.py                     # 需求-供给匹配：按单找稿/定向抓取/补稿
+│   └── build_plates.py               # 素材 → plates/p1-p4.md（字段格式 + 归属）
 └── tests/
     ├── run_tests.py                  # 测试矩阵（仿 linotype 25 项结构）
     └── scenarios.md                  # 压力场景
 
 ~/news/daily/                         ← 日报工作区（每日一份）
-~/news/compositor/docs/               ← 设计文档/实现文档
+~/news/imposer/docs/               ← 设计文档/实现文档
 ```
 
 ## 七、测试策略
@@ -262,9 +295,13 @@ compositor 读取 linotype 吐出的每一个信号并响应：
 ## 九、实现顺序（供 writing-plans 消费）
 
 1. `fetch_sources.py`：RSS 解析 + 主页抓取 + 信源清单配置
-2. `parse_signals.py`：版面健康报告
-3. `build_plates.py`：素材 → plates（字段 + 归属 + 中长篇/简讯配比）
-4. SKILL.md：编排者手册（linotype 调用 + 信号响应规则）
-5. 测试矩阵 + 场景
+2. **linotype build.py `--demand` 输出**（跨 skill 协议改造，向后兼容）
+3. `parse_demand.py`：版面健康报告 + 需求清单解析
+4. `supply.py`：需求-供给匹配（按单找稿 / 定向抓取 / 补稿）
+5. `build_plates.py`：素材 → plates（字段 + 归属 + 中长篇/简讯配比）
+6. SKILL.md：编排者手册（linotype 调用 + 需求-供给规则）
+7. 测试矩阵 + 场景
+8. 端到端试跑（真实信源出第一期样报）
+9. 交付物归档 + 工作日志
 6. 端到端试跑（真实信源出第一期样报）
 7. 交付物归档 + 工作日志

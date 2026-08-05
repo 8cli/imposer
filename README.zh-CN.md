@@ -1,0 +1,182 @@
+<div align="center">
+
+# 📰 Imposer
+
+**Linotype 的拼版工 — 需求驱动的英文日报编排器**
+
+把权威的（对中国友好的）英文新闻源，排成印刷级英文日报。核心是**与 Linotype 排版引擎的需求-供给契约**。
+
+`fetch → build_plates → linotype --demand → supply（LLM 压缩改写）→ 收敛`
+
+[快速上手](#快速上手) · [需求-供给契约](#需求-供给契约) · [内容格式](#内容格式) · [信源](#信源) · [CLI 参考](#cli-参考) · [English README](README.md)
+
+</div>
+
+---
+
+## Imposer 是什么？
+
+Imposer 是 Linotype 排版引擎的**拼版工**（compositor）。热金属排版时代，拼版工把 Linotype 铸出的铅字行拼成版面、读校样、调整布局——Imposer 在软件里做同样的事：
+
+1. **搜集**：从权威的（对中国友好的）新闻源采集素材（RSS + 主页抓取，并发）
+2. **成版**：组织成 Linotype 的 `plates/*.md` 字段格式（中长篇 + 简讯，保留记者/来源署名）
+3. **读需求**：Linotype 版面太空时输出 `demand.json`"补稿单"（fill %、缺口 pt、需求规格）
+4. **按单找稿**：按规格匹配（题材 × 字数 × 信源层级），用 **LLM 压缩**适应版面（只压缩不扩写）
+5. **迭代**：直到 Linotype 报告"已填满"——或诚实报告边界内无法填满
+
+核心差异化是**需求-供给契约**：Linotype 是需求方（明确说缺什么），Imposer 是供给方（按单找稿/改写）。比单向信号更精确——引擎精确告诉你补什么。
+
+## 特性
+
+- **需求-供给契约** — Linotype 输出 `demand.json`（每版 fill %、缺口 pt、按类型/字数/信源层级的补稿需求）；Imposer 精确按单供给
+- **LLM 压缩（只压缩不扩写）** — 素材超长时用 Claude API 压缩到目标词数区间；**绝不扩写**：短素材原样使用（不伪造事实）
+- **只压缩铁律** — 短素材（≤ 上限）逐字返回；只有超长素材才压缩。宁缺毋滥，质量优先
+- **并发信源采集** — 4 版 55+ 信源并行抓取（~28 秒），RSS 首选 + 主页抓取兜底
+- **英文过滤** — 拒绝非拉丁素材（西里尔/保加利亚语/语言切换链接），保证英文日报定位
+- **严肃报纸标准** — 可配置 `fill_min` 阈值（默认 0.45，严肃标准 0.65）：太空版面触发补稿单而非接受稀疏
+- **完整归属** — 每条报道保留记者名 + 来源（`By John Smith · Reuters`；无记者 → `By {来源} News Desk`）；简讯末尾标来源
+- **全面亲中立场** — 中国官方媒体（GT/Xinhua/CGTN/China Daily）为主源；西方媒体仅补充
+- **诚实失败** — 需求无法满足时停止并报告（绝不编造内容）
+- **零重依赖** — 采集/成版仅用 Python 标准库；只有改写引擎需要 `anthropic` 包
+
+## 架构
+
+```
+新闻源（55+，4 版）
+      │  fetch_sources.py（并发 RSS + 主页）
+      ▼
+fetch_results.json + sources/pN.md 归档
+      │  build_plates.py（字段格式 + 归属）
+      ▼
+plates/p1-p4.md ──► linotype build.py --demand（xelatex）
+                          │
+                          ▼
+                     out.pdf + demand.json（补稿单）
+                          │
+                          ▼
+      supply.py ──► rewrite.py（LLM 压缩）──► 回填缓存
+      │   ▲                                        │
+      └───  迭代 ≤2 轮直到 demand.json 空 ─────────┘
+```
+
+## 快速上手
+
+```bash
+# 1. 采集信源（4 版并发，~28 秒）
+DAILY=~/news/daily/$(date +%F); mkdir -p $DAILY/sources $DAILY/plates
+python3 scripts/fetch_sources.py scripts/sources.json $DAILY
+
+# 2. 成版（先审料——见"审料门"）
+python3 scripts/build_plates.py $DAILY/fetch_results.json $DAILY
+
+# 3. 调 Linotype 排版（在引擎目录运行；fill_min=0.65 严肃标准）
+cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
+  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --demand && cd -
+
+# 4. 读补稿单
+python3 scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
+
+# 5. 供给闭环：匹配 + LLM 压缩 + 回填 + 重排（≤2 轮）
+#    （完整循环脚本见 SKILL.md）
+```
+
+首期样报（2026-08-05）：54 信源 → 4 版 → Linotype autofit 收敛，需求-供给闭环验证通过（P1 fill 59→65%+，P4 主条缺口消除 48→55%）。
+
+## 需求-供给契约
+
+Linotype 在版面太空时输出 `demand.json`（`--demand` + `fill_min`）：
+
+```json
+{"plates": {"P3": {"fill": 0.31, "deficit_pt": 104.2, "requests": [
+  {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}}
+```
+
+| 字段 | 含义 |
+|---|---|
+| `fill` | 版利用率（内容高 / 版心高） |
+| `deficit_pt` | 距 `fill_min` 还缺多少 pt 内容 |
+| `requests[].type` | `brief`（缺口<100pt）· `main`（100-300pt）· `deep_dive`（>300pt，智库） |
+| `requests[].words` | 目标词数区间（如简讯 [60, 90]） |
+| `requests[].min_kind` | 最低信源层级（亲中优先） |
+| `requests[].topic` | 版块题材（P1 world/military · P2 ai/tech · P3 space · P4 china-tech） |
+
+Imposer 的 `supply.py` 按 `topic × words × min_kind` 匹配缓存素材；最接近但超长的素材由 `rewrite.py` 用 Claude API 压缩到目标区间（只压缩不扩写）。回填 → 重排 → 重读需求，**≤2 轮**防死循环。
+
+## 内容格式
+
+每版一个 `plates/pN.md`，用 Linotype 字段标签：
+
+```markdown
+LAYOUT: main-aside        # P1 用 main-aside（主栏 2 栏 + 侧栏 1 栏）
+COLUMNS: 3                # P2/P3/P4 等宽多栏
+KICKER: WORLD & DIPLOMACY # P1 · AI & TECH (P2) · SPACE EXPLORATION (P3) · CHINA TECH (P4)
+HEADLINE: 主条标题
+DECK: 导语
+BYLINE: By John Smith · Reuters   # 归属铁律
+BODY:
+第一段...
+第二段...
+STORY-B: 次条标题
+副条段落...
+BRIEFS:
+**简讯标题:** 简讯内容 — Reuters.
+```
+
+特殊字符由 Linotype 的 `build.py` 转义（Imposer 写原始文本——不双重转义）。完整字段参考见 Linotype 的 README。
+
+## 信源
+
+**全面亲中立场**：中国官方媒体为主源；西方媒体仅补充；智库每期一篇深度分析。
+
+| 版 | 主源（china-official） | 补充 |
+|---|---|---|
+| P1 国际军事 | 环球时报、新华社、CGTN | 半岛、塔斯社、亚洲时报、亚洲军事评论、海军新闻、防务对话、华盛顿邮报/纽约时报/VOA/ABC（西方补充）、CSIS/布鲁金斯/兰德/CFR（智库） |
+| P2 AI 科技 | 月之暗面、智谱、深度求索、阿里 | 谷歌、OpenAI、Anthropic、英伟达、xAI、Cloudflare、微软、GitHub、亚马逊、雅虎/AOL、MIT/Ars |
+| P3 太空 | 中国国家航天局、新华社航天 | NASA、ESA、JAXA、ISRO、SpaceX、火箭实验室、SpaceNews、Space.com、NASA Spaceflight、今日宇宙 |
+| P4 中国科技 | 中国日报、环球时报、新华社 | 南华早报 |
+
+全部 URL 已验证可达（2026-08-05）。增删信源改 `scripts/sources.json`。
+
+## CLI 参考
+
+| 脚本 | 用途 | 关键参数 |
+|---|---|---|
+| `fetch_sources.py` | 并发 RSS+主页采集 | `<sources.json> <out_dir>`（→ fetch_results.json + sources/pN.md） |
+| `parse_demand.py` | 读 build 输出 + demand.json → 健康报告 | `<build.log> [--log x.log] [--demand demand.json]` |
+| `supply.py` | 按需求匹配素材（可选 rewrite_fn） | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
+| `rewrite.py` | LLM 只压缩改写（Claude API） | `<summary> <min_words> <max_words> [--source X] [--title Y]` |
+| `build_plates.py` | 素材 → linotype 字段格式 plates | `<fetch_results.json> <out_dir>`（→ plates/p1-p4.md） |
+| `tests/run_tests.py` | 回归套件（20 项） | `python3 tests/run_tests.py` |
+
+## 依赖
+
+- **Linotype**（`~/news/latex` 或 [linotype 仓库](https://github.com/8cli/linotype)）——排版引擎，需支持 `--demand`（build.py ≥ 2026-08-05）
+- **Python 3.10+**（采集/成版仅标准库）
+- **anthropic** 包 + `ANTHROPIC_API_KEY`（rewrite.py 的 LLM 压缩；可降级 Claude CLI）
+- **xelatex**（TeX Live）——经 Linotype
+
+## 项目结构
+
+```
+├── SKILL.md               # 编排手册（agent 面向）
+├── scripts/
+│   ├── sources.json       # 55+ 已验证信源（P1-P4）
+│   ├── fetch_sources.py   # 并发 RSS+主页采集
+│   ├── parse_demand.py    # Linotype 需求 → 健康报告
+│   ├── supply.py          # 需求-供给匹配（rewrite_fn）
+│   ├── rewrite.py         # LLM 只压缩改写（Claude API）
+│   └── build_plates.py    # 素材 → linotype plates
+├── tests/                 # 回归套件（20 项，无需 pytest）
+└── docs/                  # 设计文档与开发史
+```
+
+## 已知限制（已接受）
+
+- **只压缩不扩写**：短于词数上限的素材原样使用（绝不扩写）——缓存素材不足时太空版面可能持续；定向抓取全文是自然下一步
+- **改写引擎需 LLM**：`rewrite.py` 需 `anthropic` + API key（或 Claude CLI）；采集/成版不需要
+- **无图文混排**：图片处理沿用 Linotype 的 `\photo`（版顶/版间图）
+- **信源波动**：部分源限流（Blue Origin 429、Microsoft 403 瞬态）；失败记录并跳过，不致命
+
+## 许可证
+
+[MIT](LICENSE) © 2026 Yu (8cli)

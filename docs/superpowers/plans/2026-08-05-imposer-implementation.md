@@ -1,10 +1,10 @@
-# compositor 实现计划 — 英文日报编排 skill
+# imposer 实现计划 — 英文日报编排 skill
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 构建 compositor skill——从权威信源（全面亲中）采集英文日报素材，组织成 linotype 消费的 `plates/*.md`，调用 linotype 排版并读取/响应其信号，产出 PDF + 信源归档 + 日报工作日志。
+**Goal:** 构建 imposer skill——从权威信源（全面亲中）采集英文日报素材，组织成 linotype 消费的 `plates/*.md`，调用 linotype 排版并**按它的补稿单（demand.json）找稿交稿**，产出 PDF + 信源归档 + 日报工作日志。
 
-**Architecture:** 3 个 Python 脚本 + 1 个 SKILL.md 编排手册。`fetch_sources.py` 拉取 RSS/主页（多信源并行，返回结构化 JSON）；`build_plates.py` 把素材组织成 linotype 字段格式的 `plates/p1-p4.md`（含归属/中长篇+简讯配比）；`parse_signals.py` 读取 linotype build.py 输出与 .log，解析版面健康报告（fill / overfull / autofit 状态）。SKILL.md 定义编排流程与信号响应规则（反馈环 ≤2 轮）。与 linotype 的接口是**文件系统**：compositor 写 `plates/*.md`，linotype 读它产出 PDF + 信号，compositor 读信号调整再写。
+**Architecture:** 4 个 Python 脚本 + 1 个 SKILL.md 编排手册。`fetch_sources.py` 拉取 RSS/主页（多信源并行，返回结构化 JSON + 信源归档）；**linotype build.py 增加 `--demand` 输出**（autofit 收敛后按 fill 缺口下补稿单 demand.json，向后兼容）；`parse_demand.py` 读 build 输出 + demand.json → 版面健康报告 + 需求清单；`supply.py` 按单找稿（topic × words × min_kind 匹配缓存，不足定向抓取）；`build_plates.py` 组织成 linotype 字段格式的 `plates/p1-p4.md`。SKILL.md 定义编排流程与需求-供给规则（反馈环 ≤2 轮）。与 linotype 的接口是**文件系统 + 需求-供给契约**：imposer 写 `plates/*.md`，linotype 产出 PDF + demand.json，imposer 按单供给再写。
 
 **Tech Stack:** Python 3.10+（标准库 urllib / xml.etree / json / re）、linotype skill（build.py / pdfcheck.py）、可选 `--visual`（pdftoppm + pixelcheck.py）
 
@@ -30,7 +30,7 @@
 ### Task 1: 信源配置（sources.json）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/sources.json`
+- Create: `~/.claude/skills/imposer/scripts/sources.json`
 
 **Interfaces:**
 - Consumes: 设计文档第三节（信源清单，全部已验证可达）
@@ -38,7 +38,7 @@
 
 - [ ] **Step 1: 写信源配置文件**
 
-创建 `~/.claude/skills/compositor/scripts/sources.json`：
+创建 `~/.claude/skills/imposer/scripts/sources.json`：
 
 ```json
 {
@@ -55,7 +55,7 @@
     {"name": "EurAsian Times", "url": "https://www.eurasiantimes.com/", "kind": "independent", "mode": "page"},
     {"name": "Washington Post", "url": "https://feeds.washingtonpost.com/rss/world", "kind": "western", "mode": "rss"},
     {"name": "New York Times", "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", "kind": "western", "mode": "rss"},
-    {"name": "VOA", "url": "https://www.voanews.com/rss", "kind": "western", "mode": "rss"},
+    {"name": "VOA", "url": "https://www.voanews.com/rss/", "kind": "western", "mode": "rss"},
     {"name": "ABC News", "url": "https://abcnews.go.com/", "kind": "western", "mode": "page"},
     {"name": "CSIS", "url": "https://www.csis.org/", "kind": "thinktank", "mode": "page"},
     {"name": "Brookings", "url": "https://www.brookings.edu/", "kind": "thinktank", "mode": "page"},
@@ -100,7 +100,7 @@
   ],
   "P4": [
     {"name": "China Daily", "url": "https://www.chinadaily.com.cn/rss/china_rss.xml", "kind": "china-official", "mode": "rss"},
-    {"name": "SCMP", "url": "https://www.scmp.com/rss/91/feed", "kind": "western", "mode": "rss"},
+    {"name": "SCMP", "url": "https://www.scmp.com/rss/91/feed", "kind": "independent", "mode": "rss"},
     {"name": "Global Times", "url": "https://www.globaltimes.cn/", "kind": "china-official", "mode": "page"},
     {"name": "Xinhua", "url": "https://english.news.cn/home.htm", "kind": "china-official", "mode": "page"}
   ]
@@ -109,13 +109,13 @@
 
 - [ ] **Step 2: 校验 JSON 合法**
 
-Run: `python3 -c "import json; json.load(open('/home/yupeng/.claude/skills/compositor/scripts/sources.json')); print('valid')"`
+Run: `python3 -c "import json; json.load(open('/home/yupeng/.claude/skills/imposer/scripts/sources.json')); print('valid')"`
 Expected: `valid`
 
 - [ ] **Step 3: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: sources.json — 61 verified sources across P1-P4"
+cd ~/news/imposer && git add -A && git commit -m "feat: sources.json — verified sources across P1-P4"
 ```
 
 ---
@@ -123,7 +123,7 @@ cd ~/news/compositor && git add -A && git commit -m "feat: sources.json — 61 v
 ### Task 2: 信源抓取器（fetch_sources.py）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/fetch_sources.py`
+- Create: `~/.claude/skills/imposer/scripts/fetch_sources.py`
 
 **Interfaces:**
 - Consumes: Task 1 的 `sources.json`
@@ -131,11 +131,11 @@ cd ~/news/compositor && git add -A && git commit -m "feat: sources.json — 61 v
 
 - [ ] **Step 1: 写抓取脚本**
 
-创建 `~/.claude/skills/compositor/scripts/fetch_sources.py`：
+创建 `~/.claude/skills/imposer/scripts/fetch_sources.py`：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 信源抓取器 — RSS 首选 + 主页抓取。
+"""imposer 信源抓取器 — RSS 首选 + 主页抓取。
 
 用法: python3 fetch_sources.py <sources.json> <out_dir>
 输出: <out_dir>/sources/pN.md（每版一个，含 URL/记者/站点/标题/摘要）
@@ -274,7 +274,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 写单元测试（RSS 解析 + 归档生成）**
 
-创建 `~/.claude/skills/compositor/tests/test_fetch.py`：
+创建 `~/.claude/skills/imposer/tests/test_fetch.py`：
 
 ```python
 import json, sys, tempfile
@@ -315,36 +315,116 @@ def test_fetch_all_writes_archive(tmp_path):
 
 - [ ] **Step 3: 运行测试验证**
 
-Run: `cd ~/.claude/skills/compositor && python3 -m pytest tests/test_fetch.py -v 2>&1 | tail -5`
+Run: `cd ~/.claude/skills/imposer && python3 -m pytest tests/test_fetch.py -v 2>&1 | tail -5`
 Expected: 2 PASS（若无 pytest，用 `python3 -c "import test_fetch"` 的 assert 兜底）
 
 - [ ] **Step 4: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: fetch_sources.py — RSS+page fetcher with source archive output"
+cd ~/news/imposer && git add -A && git commit -m "feat: fetch_sources.py — RSS+page fetcher with source archive output"
 ```
 
 ---
 
-### Task 3: 信号解析器（parse_signals.py）
+### Task 3: linotype build.py --demand 输出（跨 skill 协议改造）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/parse_signals.py`
+- Modify: `/home/yupeng/news/latex/build.py`（linotype 仓库，向后兼容增强）
 
 **Interfaces:**
-- Consumes: linotype build.py stdout + 编译日志（格式见计划头）
-- Produces: `parse_build_output(stdout, log_path) -> dict`——`{converged, overfull, fills: list[float], visual_pass, autofit_failed}`；`plate_health(fills) -> list[str]`（每版 fill% + 健康标签）
+- Consumes: linotype autofit 收敛后的 fills（build.py 内部 parse_feedback）
+- Produces: `--demand` 可选输出——autofit 收敛后写 `<output_dir>/demand.json`，格式见设计文档第四节；**不改变既有行为**（无 --demand 时零影响）
 
-- [ ] **Step 1: 写信号解析脚本**
+- [ ] **Step 1: 在 linotype build.py 增加 demand 生成函数**
 
-创建 `~/.claude/skills/compositor/scripts/parse_signals.py`：
+在 `/home/yupeng/news/latex/build.py` 增加（append 到文件末尾或信号解析区附近）：
+
+```python
+# --- compositor demand 输出（2026-08-05，跨 skill 协议；--demand 时启用）---
+TOPIC_BY_PLATE = {0: "world/military", 1: "ai/tech", 2: "space", 3: "china-tech"}
+MIN_KIND_BY_PLATE = {0: "china-official", 1: "company", 2: "agency", 3: "china-official"}
+
+def estimate_requests(fill: float, content_h: float, plate_idx: int) -> list[dict]:
+    """按 fill 缺口估算补稿需求（规格: type/words/min_kind/topic）。"""
+    if fill >= 0.45:
+        return []
+    deficit = (0.45 - fill) * content_h
+    topic = TOPIC_BY_PLATE.get(plate_idx, "world")
+    min_kind = MIN_KIND_BY_PLATE.get(plate_idx, "china-official")
+    # 估算: 简讯 60-90 字 ≈ 26-40pt; 中篇 250-400 字 ≈ 110-175pt; 深度 400-600 字 ≈ 175-260pt
+    if deficit < 100:
+        return [{"type": "brief", "count": max(1, int(deficit // 33)), "words": [60, 90],
+                 "topic": topic, "min_kind": min_kind}]
+    if deficit < 300:
+        return [{"type": "main", "count": 1, "words": [250, 400], "topic": topic, "min_kind": min_kind},
+                {"type": "brief", "count": max(1, int((deficit - 140) // 33)), "words": [60, 90],
+                 "topic": topic, "min_kind": min_kind}]
+    return [{"type": "deep_dive", "count": 1, "words": [400, 600], "topic": topic, "min_kind": "thinktank"},
+            {"type": "brief", "count": max(1, int((deficit - 200) // 33)), "words": [60, 90],
+             "topic": topic, "min_kind": min_kind}]
+
+def write_demand(output_dir: str, fills: list[float], content_h: float) -> str:
+    """写 demand.json → 返回路径（无需求返回 None）。"""
+    plates = {}
+    for i, f in enumerate(fills):
+        reqs = estimate_requests(f, content_h, i)
+        if reqs:
+            plates[f"P{i+1}"] = {"fill": round(f, 3),
+                                  "deficit_pt": round((0.45 - f) * content_h, 1),
+                                  "requests": reqs}
+    if not plates:
+        return None
+    path = os.path.join(output_dir, "demand.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"plates": plates}, fh, ensure_ascii=False, indent=2)
+    return path
+```
+
+- [ ] **Step 2: 在 build.py main 加 --demand 参数与调用**
+
+```python
+ap.add_argument("--demand", action="store_true", help="autofit 收敛后输出 demand.json（imposer 消费）")
+# main 末尾（autofit 收敛后）:
+if args.demand:
+    content_h_pt = 742.62  # A3 横版 contentH 实测; 或从日志 Plate content 解析
+    dpath = write_demand(os.path.dirname(os.path.abspath(args.output)), fills, content_h_pt)
+    if dpath:
+        print(f"  📋 demand.json 已输出: {dpath} (imposer 按单补稿)")
+    else:
+        print("  📋 demand.json: 无需求（版面全部达标）")
+```
+
+- [ ] **Step 3: 验证向后兼容（linotype 回归不破）**
+
+Run: `cd ~/news/latex && python3 ~/.claude/skills/linotype/tests/run_tests.py ~/news/latex 2>&1 | tail -3`
+Expected: `✅ 25/25 PASS`（--demand 是新增参数，不改变既有路径）
+
+- [ ] **Step 4: 提交（linotype 仓库）**
+
+```bash
+cd ~/news/latex && git add build.py && git commit -m "feat: --demand output — compositor demand-supply protocol (backward compatible)"
+```
+
+---
+
+### Task 4: 需求解析器（parse_demand.py）
+
+**Files:**
+- Create: `~/.claude/skills/imposer/scripts/parse_demand.py`
+
+**Interfaces:**
+- Consumes: linotype build.py stdout + 编译日志 + `demand.json`（Task 3 产物）
+- Produces: `parse_build_output(stdout, log_path, demand_path) -> dict`——`{converged, overfull, fills, visual_pass, autofit_failed, requests_by_plate}`；`plate_health(fills) -> list[str]`
+
+- [ ] **Step 1: 写需求解析脚本**
+
+创建 `~/.claude/skills/imposer/scripts/parse_demand.py`（在原 parse_signals 设计基础上扩展 demand 解析）：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 信号解析器 — 读取 linotype build.py 输出与 .log，产出版面健康报告。
+"""imposer 需求解析器 — 读取 linotype build.py 输出 + demand.json → 版面健康报告 + 需求清单。
 
-用法: python3 parse_signals.py <build_stdout.log> [--log <xelatex.log>]
-输出: 版面健康报告（stdout，人类可读 + 结构化）
+用法: python3 parse_demand.py <build_stdout.log> [--log <xelatex.log>] [--demand <demand.json>]
 """
 import argparse, json, re, sys
 from pathlib import Path
@@ -352,26 +432,18 @@ from pathlib import Path
 FILL_MIN = 0.45  # 与 linotype autofit 下限一致
 
 
-def parse_build_output(stdout: str, log_path: Path | None = None) -> dict:
-    """解析 build.py stdout + 编译日志 → 版面健康报告。"""
+def parse_build_output(stdout: str, log_path: Path | None = None,
+                       demand_path: Path | None = None) -> dict:
     report = {
-        "converged": False,        # autofit 是否收敛
-        "autofit_failed": False,   # 边界内无法放下
-        "overfull": False,         # 是否有 Overfull plate 警告
-        "fills": [],               # 每版 fill（[P1, P2, ...] 顺序）
-        "visual_pass": None,       # 视觉验收: True/False/None(未跑)
-        "messages": [],            # 人类可读消息
+        "converged": False, "autofit_failed": False, "overfull": False,
+        "fills": [], "visual_pass": None, "requests_by_plate": {},
+        "messages": [],
     }
-    if "✅ 收敛" in stdout:
-        report["converged"] = True
+    if "✅ 收敛" in stdout: report["converged"] = True
     if "❌ 边界内无法放下" in stdout:
-        report["autofit_failed"] = True
-        report["converged"] = False
-    if "✅ 视觉验收通过" in stdout:
-        report["visual_pass"] = True
-    if "❌ 视觉验收未通过" in stdout:
-        report["visual_pass"] = False
-    # 从编译日志解析 fill / overfull（与 linotype build.py parse_feedback 同正则）
+        report["autofit_failed"] = True; report["converged"] = False
+    if "✅ 视觉验收通过" in stdout: report["visual_pass"] = True
+    if "❌ 视觉验收未通过" in stdout: report["visual_pass"] = False
     log_text = ""
     if log_path and log_path.exists():
         log_text = log_path.read_text(errors="replace")
@@ -379,81 +451,210 @@ def parse_build_output(stdout: str, log_path: Path | None = None) -> dict:
         report["overfull"] = True
         report["messages"].append("⚠️ 存在 Overfull plate 警告")
     for m in re.finditer(r"Plate content: ([\d.]+)pt/ contentH ([\d.]+)pt", log_text):
-        content, content_h = float(m.group(1)), float(m.group(2))
-        if content_h > 0:
-            report["fills"].append(content / content_h)
-    if report["converged"] and not report["overfull"] and report["fills"] and min(report["fills"]) >= FILL_MIN:
+        c, ch = float(m.group(1)), float(m.group(2))
+        if ch > 0: report["fills"].append(c / ch)
+    # 需求清单（demand.json）
+    if demand_path and demand_path.exists():
+        demand = json.loads(demand_path.read_text(encoding="utf-8"))
+        report["requests_by_plate"] = demand.get("plates", {})
+    if report["converged"] and not report["overfull"] and report["fills"] and        min(report["fills"]) >= FILL_MIN:
         report["messages"].append(f"✅ 版面健康: 各版 fill {[f'{f*100:.0f}%' for f in report['fills']]}")
     return report
 
 
 def plate_health(fills: list[float]) -> list[str]:
-    """每版健康标签: fill < 45% → 太空(补简讯); >= 45% → OK。"""
-    return [f"P{i+1} fill {f*100:.0f}% " + ("OK" if f >= FILL_MIN else "SPARSE→补简讯")
+    return [f"P{i+1} fill {f*100:.0f}% " + ("OK" if f >= FILL_MIN else "SPARSE→按单补稿")
             for i, f in enumerate(fills)]
 
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("build_stdout")
-    ap.add_argument("--log", default=None, help="xelatex .log 路径")
+    ap.add_argument("--log", default=None)
+    ap.add_argument("--demand", default=None, help="demand.json 路径")
     args = ap.parse_args()
     stdout = Path(args.build_stdout).read_text(errors="replace")
-    report = parse_build_output(stdout, Path(args.log) if args.log else None)
+    report = parse_build_output(stdout, Path(args.log) if args.log else None,
+                                Path(args.demand) if args.demand else None)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     if report["fills"]:
-        for line in plate_health(report["fills"]):
-            print(line)
+        for line in plate_health(report["fills"]): print(line)
+    for plate, info in report["requests_by_plate"].items():
+        print(f"  📋 {plate} 需求: {len(info['requests'])} 项 — {info['requests']}")
 ```
 
 - [ ] **Step 2: 写单元测试**
 
-创建 `~/.claude/skills/compositor/tests/test_signals.py`：
+创建 `~/.claude/skills/imposer/tests/test_demand.py`：
+
+```python
+import json, sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
+import parse_demand as pd
+
+STDOUT_OK = "=== autofit ===\n  ✅ 收敛 — 最终配置: paper=a3\n  ✅ 视觉验收通过\n"
+LOG_OK = "Plate content: 700pt/ contentH 742pt\nPlate content: 300pt/ contentH 742pt\n"
+DEMAND = {"plates": {"P2": {"fill": 0.31, "deficit_pt": 104.2,
+    "requests": [{"type": "brief", "count": 2, "words": [60, 90], "topic": "ai/tech", "min_kind": "company"}]}}}
+
+def test_converged_visual_and_fills(tmp_path):
+    log = tmp_path / "out.log"; log.write_text(LOG_OK)
+    r = pd.parse_build_output(STDOUT_OK, log)
+    assert r["converged"] and r["visual_pass"] is True and not r["overfull"]
+    assert abs(r["fills"][0] - 700/742) < 0.01 and r["fills"][1] < 0.45
+
+def test_demand_parsed(tmp_path):
+    d = tmp_path / "demand.json"; d.write_text(json.dumps(DEMAND))
+    r = pd.parse_build_output(STDOUT_OK, None, d)
+    assert "P2" in r["requests_by_plate"]
+    assert r["requests_by_plate"]["P2"]["requests"][0]["type"] == "brief"
+
+def test_plate_health_labels():
+    h = pd.plate_health([0.8, 0.3])
+    assert "OK" in h[0] and "按单补稿" in h[1]
+```
+
+- [ ] **Step 3: 运行测试**
+
+Run: `cd ~/news/imposer && python3 -m pytest tests/test_demand.py -v 2>&1 | tail -5`
+Expected: 3 PASS
+
+- [ ] **Step 4: 提交**
+
+```bash
+cd ~/news/imposer && git add -A && git commit -m "feat: parse_demand.py — linotype demand.json → plate health + requests"
+```
+
+---
+
+### Task 5: 需求-供给匹配器（supply.py）
+
+**Files:**
+- Create: `~/.claude/skills/imposer/scripts/supply.py`
+
+**Interfaces:**
+- Consumes: Task 2 的 fetch 缓存（fetch_results.json）、Task 4 的 demand 解析（requests_by_plate）
+- Produces: `supply_requests(demand, cache, sources_config, out_dir) -> dict`——按单匹配素材/定向抓取 → 返回 `{plate: [补充素材]}` 供 build_plates 补稿
+
+- [ ] **Step 1: 写供给脚本**
+
+创建 `~/.claude/skills/imposer/scripts/supply.py`：
+
+```python
+#!/usr/bin/env python3
+"""imposer 需求-供给匹配器 — 按 linotype 的 demand.json 找对应规格的报道。
+
+规格匹配: topic（版块题材）× words（字数区间）× min_kind（最低信源层级）
+素材来源: ① fetch 缓存（本日已抓未用）→ ② 定向抓取（该版块信源补抓）
+用法: python3 supply.py <demand.json> <fetch_results.json> <sources.json> <out_dir>
+"""
+import argparse, json, sys
+from pathlib import Path
+
+
+def match_cache(request: dict, cache: list[dict], used_urls: set) -> dict | None:
+    """从缓存挑符合规格（topic 由版块决定，用 kind 过滤）的素材。"""
+    min_kind_rank = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
+                     "china-ai": 4, "independent": 5, "tech-media": 6, "aggregator": 7}
+    for item in cache:
+        if item["url"] in used_urls:
+            continue
+        kind_ok = min_kind_rank.get(item["kind"], 9) <= min_kind_rank.get(request["min_kind"], 9)
+        words = len(item.get("summary", "").split())
+        words_ok = request["words"][0] <= words <= request["words"][1] + 100  # 摘要上界放宽
+        if kind_ok and words_ok:
+            used_urls.add(item["url"])
+            return item
+    return None
+
+
+def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
+                    fetch_fn=None) -> dict:
+    """按 demand 供给 → {plate: [补充素材]}。fetch_fn 可注入（测试用）。"""
+    results = {}
+    for plate, info in demand.get("plates", {}).items():
+        plate_cache = cache.get(plate, [])
+        used = {x["url"] for x in plate_cache if x.get("used")}
+        supplied = []
+        for req in info.get("requests", []):
+            for _ in range(req.get("count", 1)):
+                item = match_cache(req, plate_cache, used)
+                if item is None and fetch_fn:  # 缓存不足 → 定向抓取
+                    item = fetch_fn(plate, req, sources, out_dir)
+                if item:
+                    supplied.append({**item, "request": req})
+        results[plate] = supplied
+    return results
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("demand_json")
+    ap.add_argument("fetch_results_json")
+    ap.add_argument("sources_json")
+    ap.add_argument("out_dir")
+    args = ap.parse_args()
+    demand = json.load(open(args.demand_json))
+    cache = json.load(open(args.fetch_results_json))
+    sources = json.load(open(args.sources_json))
+    results = supply_requests(demand, cache, sources, Path(args.out_dir))
+    for plate, items in results.items():
+        print(f"{plate}: 供给 {len(items)} 条 — {[i['title'][:40] for i in items]}")
+    print(json.dumps(results, ensure_ascii=False, indent=2))
+```
+
+- [ ] **Step 2: 写单元测试**
+
+创建 `~/.claude/skills/imposer/tests/test_supply.py`：
 
 ```python
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
-import parse_signals as ps
+import supply as sp
 
-STDOUT_OK = "=== autofit ===\n  ✅ 收敛 — 最终配置: paper=a3\n  ✅ 视觉验收通过\n"
-LOG_OK = "Plate content: 700pt/ contentH 742pt\nPlate content: 300pt/ contentH 742pt\n"
-LOG_OVER = "Plate content: 800pt/ contentH 742pt\nOverfull plate: content 800pt> contentH 742pt\n"
+CACHE = {
+    "P2": [
+        {"title": "OpenAI model", "url": "https://e.com/1", "summary": "word " * 70, "source": "OpenAI", "kind": "company"},
+        {"title": "Used item", "url": "https://e.com/2", "summary": "word " * 30, "source": "Alibaba", "kind": "china-ai", "used": True},
+        {"title": "Short one", "url": "https://e.com/3", "summary": "word " * 15, "source": "Yahoo", "kind": "aggregator"},
+    ]
+}
+DEMAND = {"plates": {"P2": {"fill": 0.31, "requests": [
+    {"type": "brief", "count": 1, "words": [60, 90], "topic": "ai/tech", "min_kind": "company"}]}}}
 
-def test_converged_and_visual_pass(tmp_path):
-    log = tmp_path / "out.log"; log.write_text(LOG_OK)
-    r = ps.parse_build_output(STDOUT_OK, log)
-    assert r["converged"] and r["visual_pass"] is True and not r["overfull"]
-    assert abs(r["fills"][0] - 700/742) < 0.01 and r["fills"][1] < 0.45
+def test_match_cache_skips_used_and_filters_kind():
+    used = set()
+    item = sp.match_cache(DEMAND["plates"]["P2"]["requests"][0], CACHE["P2"], used)
+    assert item["title"] == "OpenAI model"   # company 优先, 跳过 used
+    assert "https://e.com/2" not in used or item["url"] != "https://e.com/2"
 
-def test_overfull_detected(tmp_path):
-    log = tmp_path / "out.log"; log.write_text(LOG_OVER)
-    r = ps.parse_build_output("", log)
-    assert r["overfull"] and len(r["fills"]) == 1
-
-def test_plate_health_labels():
-    h = ps.plate_health([0.8, 0.3])
-    assert "OK" in h[0] and "补简讯" in h[1]
+def test_supply_requests_returns_matched():
+    results = sp.supply_requests(DEMAND, CACHE, {}, Path("."))
+    assert "P2" in results and len(results["P2"]) == 1
+    assert results["P2"][0]["request"]["type"] == "brief"
 ```
 
 - [ ] **Step 3: 运行测试**
 
-Run: `cd ~/.claude/skills/compositor && python3 -m pytest tests/test_signals.py -v 2>&1 | tail -5`
-Expected: 3 PASS
+Run: `cd ~/news/imposer && python3 -m pytest tests/test_supply.py -v 2>&1 | tail -5`
+Expected: 2 PASS
 
 - [ ] **Step 4: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: parse_signals.py — linotype build output → plate health report"
+cd ~/news/imposer && git add -A && git commit -m "feat: supply.py — demand-supply matching by topic/words/kind"
 ```
 
 ---
 
-### Task 4: 素材成版器（build_plates.py）
+### Task 6: 素材成版器（build_plates.py）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/build_plates.py`
+- Create: `~/.claude/skills/imposer/scripts/build_plates.py`
 
 **Interfaces:**
 - Consumes: Task 2 的抓取结果（sources/pN.md 或 JSON）、Task 3 的版面健康报告（回调调整用）
@@ -461,11 +662,11 @@ cd ~/news/compositor && git add -A && git commit -m "feat: parse_signals.py — 
 
 - [ ] **Step 1: 写素材成版脚本**
 
-创建 `~/.claude/skills/compositor/scripts/build_plates.py`：
+创建 `~/.claude/skills/imposer/scripts/build_plates.py`：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 素材成版器 — 抓取素材 → linotype 字段格式的 plates/pN.md。
+"""imposer 素材成版器 — 抓取素材 → linotype 字段格式的 plates/pN.md。
 
 用法: python3 build_plates.py <fetch_results.json> <out_dir>
 输出: <out_dir>/plates/p1.md ... p4.md（linotype 消费）
@@ -591,7 +792,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 写单元测试**
 
-创建 `~/.claude/skills/compositor/tests/test_build_plates.py`：
+创建 `~/.claude/skills/imposer/tests/test_build_plates.py`：
 
 ```python
 import json, sys
@@ -637,41 +838,43 @@ def test_write_plates_outputs_files(tmp_path):
 
 - [ ] **Step 3: 运行测试**
 
-Run: `cd ~/.claude/skills/compositor && python3 -m pytest tests/test_build_plates.py -v 2>&1 | tail -5`
+Run: `cd ~/.claude/skills/imposer && python3 -m pytest tests/test_build_plates.py -v 2>&1 | tail -5`
 Expected: 5 PASS
 
 - [ ] **Step 4: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: build_plates.py — fetch results → linotype field-format plates"
+cd ~/news/imposer && git add -A && git commit -m "feat: build_plates.py — fetch results → linotype field-format plates"
 ```
 
 ---
 
-### Task 5: SKILL.md 编排手册
+### Task 7: SKILL.md 编排手册
 
 **Files:**
-- Create: `~/.claude/skills/compositor/SKILL.md`
+- Create: `~/.claude/skills/imposer/SKILL.md`
 
 **Interfaces:**
-- Consumes: Task 2-4 的脚本；linotype skill（`~/.claude/skills/linotype`）
-- Produces: 编排者流程文档（用户喊"做今天的日报" → 全流程）
+- Consumes: Task 2/4/5/6 的脚本；linotype skill（`~/.claude/skills/linotype`）
+- Produces: 编排者流程文档（用户喊"做今天的日报" → 全流程，含需求-供给闭环）
 
 - [ ] **Step 1: 写 SKILL.md**
 
-创建 `~/.claude/skills/compositor/SKILL.md`：
+创建 `~/.claude/skills/imposer/SKILL.md`：
 
 ```markdown
 ---
-name: compositor
-description: Use when the user wants to produce a daily English newspaper (英文日报/报纸/做今天的日报/出报). Organizes source material from authoritative China-friendly news sources into linotype plates, runs linotype typesetting, reads its signals (Overfull/fill/visual diagnostics) and responds by trimming/adding/swapping content. Companion to the linotype typesetting skill.
+name: imposer
+description: Use when the user wants to produce a daily English newspaper (英文日报/报纸/做今天的日报/出报). Organizes source material from authoritative China-friendly news sources into linotype plates, runs linotype typesetting, reads its demand signals (demand.json requests for briefs/deep-dives to fill blank space) and supplies matching stories by topic/word-count/source-rank. Companion to the linotype typesetting skill.
 ---
 
-# compositor — 英文日报编排
+# imposer — 英文日报编排
 
 ## 定位
 
-compositor 是 linotype 的**排字工**：组织 4 版素材 → 调用 linotype 排版 → 读取其信号（Overfull/fill/视觉诊断）→ 自动响应（裁段/补简讯/换条）→ 产出 PDF + 信源归档 + 工作日志。
+imposer 是 linotype 的**拼版工**：组织 4 版素材 → 调用 linotype 排版 → **接收 linotype 的补稿单（demand.json）→ 按单找稿交稿**（题材×篇幅×信源层级匹配）→ 产出 PDF + 信源归档 + 工作日志。
+
+**核心关系（需求-供给契约）**：linotype 是需求方（版面缺内容时下补稿单），imposer 是供给方（按单找稿）。比单向信号更精确、更良性。
 
 **铁律**：材料组织与版面纪律耦合——写出的 plates 第一轮就接近版面，反馈环只是微调（≤2 轮）。
 
@@ -681,32 +884,47 @@ compositor 是 linotype 的**排字工**：组织 4 版素材 → 调用 linotyp
 # 1. 建当日工作区
 DAILY=~/news/daily/$(date +%F); mkdir -p $DAILY/sources $DAILY/plates
 # 2. 抓取信源（4 版并行）
-python3 ~/.claude/skills/compositor/scripts/fetch_sources.py \
-  ~/.claude/skills/compositor/scripts/sources.json $DAILY > $DAILY/fetch.log
+python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
+  ~/.claude/skills/imposer/scripts/sources.json $DAILY > $DAILY/fetch.log
 # 3. 组织成版（需人工审查素材后执行——见"审料门"）
-python3 ~/.claude/skills/compositor/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
-# 4. 调 linotype 排版（autofit 默认开）
+python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
+# 4. 调 linotype 排版（autofit 默认开 + --demand 输出补稿单）
 python3 ~/news/latex/build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2" --visual > $DAILY/build.log 2>&1
-# 5. 读信号 → 版面健康报告
-python3 ~/.claude/skills/compositor/scripts/parse_signals.py $DAILY/build.log --log $DAILY/out.log
+  --docopts "paper=a3,landscape,columns=3,plates=2" --visual --demand > $DAILY/build.log 2>&1
+# 5. 读需求 → 版面健康报告 + 补稿单
+python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
+# 6. 有需求？按单补稿（supply 匹配缓存/定向抓取）→ 重排（≤2 轮）
+python3 ~/.claude/skills/imposer/scripts/supply.py $DAILY/demand.json $DAILY/fetch_results.json \
+  ~/.claude/skills/imposer/scripts/sources.json $DAILY
 ```
 
-## 信号响应规则（灵魂）
+## 需求-供给契约（灵魂）
 
-| linotype 信号 | compositor 响应 |
+linotype 在 `--demand` 模式下输出 `demand.json`——每版缺什么：
+
+```json
+{"P3": {"fill": 0.31, "deficit_pt": 104.2, "requests": [
+  {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}
+```
+
+imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字数区间）× `min_kind`（最低信源层级，亲中优先）→ 缓存匹配 → 不足则定向抓取该版块信源 → 生成补稿 → 重排。
+
+**规格映射**：P1 world/military · P2 ai/tech · P3 space · P4 china-tech；需求类型按缺口：`<100pt → briefs`、`100-300pt → 1 main + briefs`、`>300pt → deep_dive + briefs`。
+
+## 其余信号响应
+
+| linotype 信号 | imposer 响应 |
 |---|---|
-| fill < 45%（某版太空） | 该版补 1-2 条简讯 / 扩写主条段落 |
 | Overfull plate 警告 | 裁段（末段起）→ 换次条 → 减简讯 |
 | autofit ✅ 收敛 | 进入 QA（pdfcheck + --visual） |
 | autofit ❌ 边界内无法放下 | 接受 + 报告用户人工决策（不硬调） |
 | --visual ❌ 空白带 | 调配比（增/减内容）或接受 |
 
-**反馈环**：调整 plates → 重排 → 重读信号，**最多 2 轮**。仍不达标 → 停止 + 诚实报告。
+**反馈环**：补稿 → 重排 → 重读需求，**最多 2 轮**。仍不达标 → 停止 + 诚实报告。
 
 ## 信源与归属
 
-- 信源清单：`scripts/sources.json`（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 中国科技，61 源，全面亲中）
+- 信源清单：`scripts/sources.json`（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 中国科技，全面亲中）
 - 归属铁律：`By {记者} · {站点}`；无记者 `By {站点} News Desk`；简讯末尾标站点；付费墙退 RSS 摘要标注 `[付费墙]`
 - 智库深度文章：每期至少一篇（CSIS/Brookings/RAND/CFR 等，有更新才放）
 - 亲中编辑原则：涉华报道以中国官方口径为准；西方主流仅补充
@@ -723,8 +941,8 @@ python3 ~/.claude/skills/compositor/scripts/parse_signals.py $DAILY/build.log --
 $DAILY/
 ├── sources/p1-p4.md   # 信源归档（URL/记者/站点/摘要）
 ├── plates/p1-p4.md    # linotype 消费
-├── out.pdf + out.log + out.tex + layout.json
-└── fetch.log + build.log + compositor.log  # 工作日志
+├── out.pdf + out.log + out.tex + layout.json + demand.json
+└── fetch.log + build.log + imposer.log  # 工作日志
 ```
 
 ## 诚实原则
@@ -735,33 +953,33 @@ $DAILY/
 
 - [ ] **Step 2: 验证 front matter 合法**
 
-Run: `head -5 ~/.claude/skills/compositor/SKILL.md | grep -q "name: compositor" && echo ok`
+Run: `head -5 ~/.claude/skills/imposer/SKILL.md | grep -q "name: imposer" && echo ok`
 Expected: `ok`
 
 - [ ] **Step 3: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: compositor SKILL.md — one-key daily newspaper orchestration manual"
+cd ~/news/imposer && git add -A && git commit -m "feat: imposer SKILL.md — demand-supply orchestration manual"
 ```
 
 ---
 
-### Task 6: 端到端集成（真实信源首期样报）
+### Task 8: 端到端集成（真实信源首期样报）
 
 **Files:**
-- Modify: `~/news/compositor/docs/superpowers/specs/2026-08-05-compositor-design.md`（如有偏差记录）
+- Modify: `~/news/imposer/docs/superpowers/specs/2026-08-05-imposer-design.md`（如有偏差记录）
 - Create: `~/news/daily/2026-08-05/`（首期工作区，交付物）
 
 **Interfaces:**
-- Consumes: Task 1-5 全部
-- Produces: 首期样报 PDF + 归档 + 日志（验证设计完整落地）
+- Consumes: Task 1-7 全部（含 Task 3 的 linotype --demand）
+- Produces: 首期样报 PDF + 归档 + 日志 + demand.json（验证设计完整落地）
 
 - [ ] **Step 1: 建工作区并抓取**
 
 ```bash
 DAILY=~/news/daily/2026-08-05; mkdir -p $DAILY/sources $DAILY/plates
-python3 ~/.claude/skills/compositor/scripts/fetch_sources.py \
-  ~/.claude/skills/compositor/scripts/sources.json $DAILY 2>&1 | tail -8
+python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
+  ~/.claude/skills/imposer/scripts/sources.json $DAILY 2>&1 | tail -8
 ```
 Expected: P1-P4 各有新闻（个别信源失败属正常，记录日志）
 
@@ -769,15 +987,15 @@ Expected: P1-P4 各有新闻（个别信源失败属正常，记录日志）
 
 列出信源归档摘要，请用户审阅素材质量（标题/归属/覆盖面），确认后进成版。
 
-- [ ] **Step 3: 成版 + 排版 + 读信号**
+- [ ] **Step 3: 成版 + 排版 + 读需求**
 
 ```bash
-python3 ~/.claude/skills/compositor/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
+python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 python3 ~/news/latex/build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2" --visual > $DAILY/build.log 2>&1
-python3 ~/.claude/skills/compositor/scripts/parse_signals.py $DAILY/build.log --log $DAILY/out.log
+  --docopts "paper=a3,landscape,columns=3,plates=2" --visual --demand > $DAILY/build.log 2>&1
+python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
 ```
-Expected: 版面健康报告；不达标按信号规则自动调（≤2 轮）
+Expected: 版面健康报告 + 补稿单；有需求按单补稿（Task 5 supply）→ 重排（≤2 轮）
 
 - [ ] **Step 4: 验证交付物齐全**
 
@@ -787,32 +1005,32 @@ Expected: 全部存在；out.pdf 可打开
 - [ ] **Step 5: 记录偏差并提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: first daily edition — E2E verified, PDF+archive+logs delivered"
+cd ~/news/imposer && git add -A && git commit -m "feat: first daily edition — E2E verified, PDF+archive+logs delivered"
 ```
 
 ---
 
-### Task 7: 回归测试套件（run_tests.py）
+### Task 9: 回归测试套件（run_tests.py）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/tests/run_tests.py`
+- Create: `~/.claude/skills/imposer/tests/run_tests.py`
 
 **Interfaces:**
-- Consumes: Task 2-4 的脚本与测试
+- Consumes: Task 2/4/5/6 的脚本与测试
 - Produces: 一键回归（`python3 run_tests.py` → 全绿）
 
 - [ ] **Step 1: 写回归套件**
 
-创建 `~/.claude/skills/compositor/tests/run_tests.py`：
+创建 `~/.claude/skills/imposer/tests/run_tests.py`：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 回归测试 — 一键跑全部单元测试。"""
+"""imposer 回归测试 — 一键跑全部单元测试。"""
 import sys, subprocess
 from pathlib import Path
 
 HERE = Path(__file__).parent
-TESTS = ["test_fetch.py", "test_signals.py", "test_build_plates.py"]
+TESTS = ["test_fetch.py", "test_demand.py", "test_supply.py", "test_build_plates.py"]
 
 def main():
     fails = 0
@@ -835,23 +1053,25 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 运行并确认全绿**
 
-Run: `cd ~/.claude/skills/compositor && python3 tests/run_tests.py`
+Run: `cd ~/.claude/skills/imposer && python3 tests/run_tests.py`
 Expected: `✅ 全部通过`（10 项测试）
 
 - [ ] **Step 3: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: run_tests.py — compositor regression suite (10 tests)"
+cd ~/news/imposer && git add -A && git commit -m "feat: run_tests.py — imposer regression suite (10 tests)"
 ```
 
 ---
 
 ## 验收清单（对照设计文档）
 
-- [ ] `sources.json` 61 源全验证可达，P1-P4 分配正确
-- [ ] `fetch_sources.py`：RSS + 主页抓取，信源归档（URL/记者/站点/摘要）
-- [ ] `parse_signals.py`：读 build.py stdout + .log → fill/overfull/visual/收敛 状态
+- [ ] `sources.json` 源全验证可达，P1-P4 分配正确
+- [ ] `fetch_sources.py`：RSS + 主页抓取，信源归档（URL/记者/站点/摘要）+ fetch_results.json
+- [ ] **linotype build.py `--demand`**：autofit 收敛后输出 demand.json（fill 缺口 → requests），linotype 回归 25/25 不破
+- [ ] `parse_demand.py`：读 build.py stdout + .log + demand.json → fill/overfull/visual/收敛 + 需求清单
+- [ ] `supply.py`：按单找稿（topic × words × min_kind 匹配缓存，不足定向抓取）
 - [ ] `build_plates.py`：素材 → linotype 字段格式 plates，归属保留，中长篇+简讯配比
-- [ ] SKILL.md：一键日报流程 + 信号响应规则（≤2 轮反馈环）
-- [ ] 首期样报：PDF + 归档 + 日志齐备，版面健康（0 Overfull 或诚实报告）
-- [ ] 回归 10 项全绿
+- [ ] SKILL.md：一键日报流程 + 需求-供给契约（≤2 轮反馈环）
+- [ ] 首期样报：PDF + 归档 + 日志 + demand.json 齐备，版面健康（0 Overfull 或诚实报告）
+- [ ] 回归 12 项全绿（fetch 2 + demand 3 + supply 2 + build_plates 5）
