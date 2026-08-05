@@ -62,7 +62,7 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 |---|---|---|
 | Washington Post | RSS（主站超时） | `feeds.washingtonpost.com/rss/world` |
 | New York Times | RSS | `rss.nytimes.com/services/xml/rss/nyt/World.xml` |
-| VOA（美国之音） | 主页 + RSS | `voanews.com` + `voanews.com/rss` |
+| VOA（美国之音） | 主页 + RSS | `voanews.com` + `voanews.com/rss/`（注意尾斜杠） |
 | ABC News | 主页抓取 | `abcnews.go.com` |
 
 **编辑原则**：同一事件多源对照时，优先中国官方口径；西方主流仅作信息补充，付费墙截断退 RSS 摘要。
@@ -172,7 +172,7 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 | 信源 | 方式 | URL |
 |---|---|---|
 | China Daily | RSS | `chinadaily.com.cn/rss/china_rss.xml` |
-| SCMP | RSS | `scmp.com/rss/91/feed` |
+| SCMP（香港英文，Alibaba 旗下） | RSS | `scmp.com/rss/91/feed`（kind=independent） |
 | Global Times | 主页抓取 | `globaltimes.cn` |
 | Xinhua | 主页抓取 | `english.news.cn` |
 

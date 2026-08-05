@@ -55,7 +55,7 @@
     {"name": "EurAsian Times", "url": "https://www.eurasiantimes.com/", "kind": "independent", "mode": "page"},
     {"name": "Washington Post", "url": "https://feeds.washingtonpost.com/rss/world", "kind": "western", "mode": "rss"},
     {"name": "New York Times", "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml", "kind": "western", "mode": "rss"},
-    {"name": "VOA", "url": "https://www.voanews.com/rss", "kind": "western", "mode": "rss"},
+    {"name": "VOA", "url": "https://www.voanews.com/rss/", "kind": "western", "mode": "rss"},
     {"name": "ABC News", "url": "https://abcnews.go.com/", "kind": "western", "mode": "page"},
     {"name": "CSIS", "url": "https://www.csis.org/", "kind": "thinktank", "mode": "page"},
     {"name": "Brookings", "url": "https://www.brookings.edu/", "kind": "thinktank", "mode": "page"},
@@ -100,7 +100,7 @@
   ],
   "P4": [
     {"name": "China Daily", "url": "https://www.chinadaily.com.cn/rss/china_rss.xml", "kind": "china-official", "mode": "rss"},
-    {"name": "SCMP", "url": "https://www.scmp.com/rss/91/feed", "kind": "western", "mode": "rss"},
+    {"name": "SCMP", "url": "https://www.scmp.com/rss/91/feed", "kind": "independent", "mode": "rss"},
     {"name": "Global Times", "url": "https://www.globaltimes.cn/", "kind": "china-official", "mode": "page"},
     {"name": "Xinhua", "url": "https://english.news.cn/home.htm", "kind": "china-official", "mode": "page"}
   ]
@@ -115,7 +115,7 @@ Expected: `valid`
 - [ ] **Step 3: 提交**
 
 ```bash
-cd ~/news/imposer && git add -A && git commit -m "feat: sources.json — 61 verified sources across P1-P4"
+cd ~/news/imposer && git add -A && git commit -m "feat: sources.json — verified sources across P1-P4"
 ```
 
 ---
