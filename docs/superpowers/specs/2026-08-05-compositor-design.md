@@ -56,6 +56,17 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 | Al Jazeera（非西方独立补充） | RSS | `aljazeera.com/xml/rss/all.xml` |
 | TASS（俄官方，地缘/俄乌补充） | 主页抓取 | `tass.com` |
 
+**西方主流补充层**（信息广度与交叉验证；涉华报道以中国官方口径为准）：
+
+| 信源 | 方式 | URL（已验证可达） |
+|---|---|---|
+| Washington Post | RSS（主站超时） | `feeds.washingtonpost.com/rss/world` |
+| New York Times | RSS | `rss.nytimes.com/services/xml/rss/nyt/World.xml` |
+| VOA（美国之音） | 主页 + RSS | `voanews.com` + `voanews.com/rss` |
+| ABC News | 主页抓取 | `abcnews.go.com` |
+
+**编辑原则**：同一事件多源对照时，优先中国官方口径；西方主流仅作信息补充，付费墙截断退 RSS 摘要。
+
 **俄乌亲中视角** = 和谈立场、反对升级、报道中国和平倡议、批评北约东扩。无需专门俄乌站。
 
 ### P2 AI 与科技（含科技公司新闻）
@@ -92,6 +103,8 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 | CGTN Tech / Xinhua 科技 | RSS/主页 | 同上 |
 | MIT Technology Review（技术事实补充） | RSS | `technologyreview.com/feed/` |
 | Ars Technica（技术事实补充） | RSS | `feeds.arstechnica.com/arstechnica/technology-lab` |
+| Yahoo News（聚合门户） | 主页抓取 | `yahoo.com/news/` |
+| AOL（聚合门户） | 主页抓取 | `aol.com` |
 
 ### P3 太空探索
 
