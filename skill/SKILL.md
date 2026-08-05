@@ -25,14 +25,36 @@ python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
 python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 # 4. 调 linotype 排版（autofit 默认开 + --demand 输出补稿单）
 #    注意: linotype build.py 需在引擎目录运行（cwd 须含 linotype.cls）
+#    fill_min=0.65 严肃报纸标准：空白多则发补稿单（默认 0.45 宽松）
 cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2" --visual --demand > $DAILY/build.log 2>&1 && cd -
+  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --visual --demand > $DAILY/build.log 2>&1 && cd -
 # 5. 读需求 → 版面健康报告 + 补稿单
 python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
-# 6. 有需求？按单补稿（supply 匹配缓存/定向抓取）→ 重排（≤2 轮）
-python3 ~/.claude/skills/imposer/scripts/supply.py $DAILY/demand.json $DAILY/fetch_results.json \
-  ~/.claude/skills/imposer/scripts/sources.json $DAILY
-```
+# 6. 需求-供给闭环：按单补稿 → LLM 压缩改写（只压缩不扩写）→ 回填 → 重排
+#    直到 linotype 返回"已填满"（demand.json 无需求或 ≤2 轮上限）
+python3 - <<'PYEOF'
+import json, sys, subprocess
+from pathlib import Path
+sys.path.insert(0, str(Path.home() / ".claude/skills/imposer/scripts"))
+import supply, rewrite
+DAILY = Path.home() / "news/daily" / subprocess.run(["date", "+%F"], capture_output=True, text=True).stdout.strip()
+for round_no in range(1, 3):  # ≤2 轮防死循环
+    demand = json.load(open(DAILY / "demand.json")) if (DAILY / "demand.json").exists() else {"plates": {}}
+    if not demand.get("plates"):
+        print(f"✅ 第 {round_no-1} 轮后已填满（无需求）"); break
+    cache = json.load(open(DAILY / "fetch_results.json"))
+    sources = json.load(open(str(Path.home() / ".claude/skills/imposer/scripts/sources.json")))
+    supplied = supply.supply_requests(demand, cache, sources, DAILY, rewrite_fn=rewrite.rewrite)
+    if not any(supplied.values()):
+        print(f"⚠️ 第 {round_no} 轮无供给（素材用尽），停止"); break
+    for plate, items in supplied.items():
+        for i in items: cache[plate].append(i)
+    with open(DAILY / "fetch_results.json", "w") as f: json.dump(cache, f, ensure_ascii=False, indent=2)
+    print(f"🔄 第 {round_no} 轮补稿 {sum(len(v) for v in supplied.values())} 条 → 重排")
+    subprocess.run(["python3", "build.py", str(DAILY / "plates"), str(DAILY / "out.tex"),
+                    "--docopts", "paper=a3,landscape,columns=3,plates=2,fill_min=0.65", "--demand"],
+                   cwd=str(Path.home() / "news/latex"), capture_output=True)
+PYEOF
 
 ## 需求-供给契约（灵魂）
 
