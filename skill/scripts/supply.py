@@ -43,7 +43,7 @@ def match_cache(request: dict, cache: list[dict], used_urls: set,
             continue  # 非英文素材不补稿
         kind_ok = min_kind_rank.get(item["kind"], 9) <= min_kind_rank.get(request["min_kind"], 9)
         words = len(item.get("summary", "").split())
-        words_ok = request["words"][0] <= words <= request["words"][1] + 100  # 摘要上界放宽
+        words_ok = request["words"][0] <= words <= request["words"][1]
         if kind_ok and words_ok:
             used_urls.add(item["url"])
             return item
@@ -62,11 +62,13 @@ def match_cache(request: dict, cache: list[dict], used_urls: set,
 
 
 def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
-                    fetch_fn=None, allow_rewrite: bool = True) -> dict:
+                    fetch_fn=None, allow_rewrite: bool = True, rewrite_fn=None) -> dict:
     """按 demand 供给 → {plate: [补充素材]}。fetch_fn 可注入（测试用）。
 
-    allow_rewrite=True（默认）: 精确规格匹配失败时返回最接近素材 + needs_rewrite，
-    由 SKILL.md 编排层 AI 改写压缩到目标词数区间。
+    allow_rewrite=True（默认）: 精确规格匹配失败时返回最接近素材，由 rewrite_fn
+    （rewrite.py，LLM 压缩）改写压缩到目标词数区间。rewrite_fn 签名:
+        rewrite_fn(summary, min_words, max_words, source, title) -> str
+    铁律：只压缩不扩写——素材词数 ≤ 需求上限时原样返回（不调用 LLM）。
     """
     results = {}
     for plate, info in demand.get("plates", {}).items():
@@ -82,6 +84,14 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
                         item = None
                 if item:
                     used.add(item["url"])  # fetch 素材也记 used，防重复供给
+                    # LLM 改写压缩（铁律: 只压缩不扩写，由 rewrite_fn 内部保证）
+                    if item.get("needs_rewrite") and rewrite_fn:
+                        lo, hi = req["words"]
+                        item["summary"] = rewrite_fn(
+                            item.get("summary", ""), lo, hi,
+                            item.get("source", ""), item.get("title", ""))
+                        item.pop("needs_rewrite", None)
+                        item.pop("target_words", None)
                     supplied.append({**item, "request": req})
         results[plate] = supplied
     return results
