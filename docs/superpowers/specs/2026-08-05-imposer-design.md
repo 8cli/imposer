@@ -1,4 +1,4 @@
-# compositor — 英文日报编排 skill（与 linotype 双向互动）
+# imposer — 英文日报编排 skill（与 linotype 双向互动）
 
 > 日期：2026-08-05
 > 状态：设计已获用户批准（逐节确认）
@@ -8,12 +8,12 @@
 
 ## 一、定位与命名
 
-**compositor** 是 linotype 的排字工——热金属排版时代操作 Linotype 铸排机、读它出的样张并调整版面的岗位。职责对应：
+**imposer** 是 linotype 的排字工——热金属排版时代操作 Linotype 铸排机、读它出的样张并调整版面的岗位。职责对应：
 
 - **组织材料**（copy desk 职能）：从权威信源采集、摘录、组织成 linotype 消费的 `plates/*.md`
 - **响应信号**（stonehand 职能）：读取 linotype 的排版信号（Overfull / fill / 视觉诊断），自动调整并重排
 
-**核心设计原则**：材料组织与版面纪律耦合——compositor 天生知道 linotype 的字段格式、篇幅预算、中长篇+简讯配比，所以排出的材料第一轮就接近版面，反馈环只是微调。
+**核心设计原则**：材料组织与版面纪律耦合——imposer 天生知道 linotype 的字段格式、篇幅预算、中长篇+简讯配比，所以排出的材料第一轮就接近版面，反馈环只是微调。
 
 ## 二、报纸结构（固定 4 版）
 
@@ -180,9 +180,9 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 
 ## 四、与 linotype 的信号协议（灵魂）
 
-compositor 读取 linotype 吐出的每一个信号并响应：
+imposer 读取 linotype 吐出的每一个信号并响应：
 
-| linotype 信号 | 含义 | compositor 响应 |
+| linotype 信号 | 含义 | imposer 响应 |
 |---|---|---|
 | `Plate content: X/Y`（typeout） | 版填充率 | fill < 45% → 增补简讯 / 扩写段落 |
 | `Overfull plate: content X>Y`（typeout） | 溢出 | 裁段（末段起）→ 换次条 → 减简讯 |
@@ -209,7 +209,7 @@ compositor 读取 linotype 吐出的每一个信号并响应：
 ├── sources/          # 信源归档：每版一个 md（URL/记者/站点/摘录原文）
 ├── plates/           # 生成的 p1-p4.md（linotype 消费）
 ├── out.pdf + out.log + out.tex + layout.json
-└── compositor.log    # 日报工作日志（搜索→摘录→调整→QA 全程）
+└── imposer.log    # 日报工作日志（搜索→摘录→调整→QA 全程）
 ```
 
 **一键流程**（用户喊"做今天的日报"）：
@@ -228,8 +228,8 @@ compositor 读取 linotype 吐出的每一个信号并响应：
 ## 六、目录结构与文件清单
 
 ```
-~/.claude/skills/compositor/          ← skill 本体
-├── SKILL.md                          # compositor 手册（编排者模式，linotype 知识内嵌）
+~/.claude/skills/imposer/          ← skill 本体
+├── SKILL.md                          # imposer 手册（编排者模式，linotype 知识内嵌）
 ├── scripts/
 │   ├── fetch_sources.py              # RSS 拉取 + 主页抓取（多信源并行）
 │   ├── build_plates.py               # 素材 → plates/p1-p4.md（字段格式 + 归属）
@@ -239,7 +239,7 @@ compositor 读取 linotype 吐出的每一个信号并响应：
     └── scenarios.md                  # 压力场景
 
 ~/news/daily/                         ← 日报工作区（每日一份）
-~/news/compositor/docs/               ← 设计文档/实现文档
+~/news/imposer/docs/               ← 设计文档/实现文档
 ```
 
 ## 七、测试策略

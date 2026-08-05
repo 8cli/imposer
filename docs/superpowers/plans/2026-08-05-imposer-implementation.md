@@ -1,10 +1,10 @@
-# compositor 实现计划 — 英文日报编排 skill
+# imposer 实现计划 — 英文日报编排 skill
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 构建 compositor skill——从权威信源（全面亲中）采集英文日报素材，组织成 linotype 消费的 `plates/*.md`，调用 linotype 排版并读取/响应其信号，产出 PDF + 信源归档 + 日报工作日志。
+**Goal:** 构建 imposer skill——从权威信源（全面亲中）采集英文日报素材，组织成 linotype 消费的 `plates/*.md`，调用 linotype 排版并读取/响应其信号，产出 PDF + 信源归档 + 日报工作日志。
 
-**Architecture:** 3 个 Python 脚本 + 1 个 SKILL.md 编排手册。`fetch_sources.py` 拉取 RSS/主页（多信源并行，返回结构化 JSON）；`build_plates.py` 把素材组织成 linotype 字段格式的 `plates/p1-p4.md`（含归属/中长篇+简讯配比）；`parse_signals.py` 读取 linotype build.py 输出与 .log，解析版面健康报告（fill / overfull / autofit 状态）。SKILL.md 定义编排流程与信号响应规则（反馈环 ≤2 轮）。与 linotype 的接口是**文件系统**：compositor 写 `plates/*.md`，linotype 读它产出 PDF + 信号，compositor 读信号调整再写。
+**Architecture:** 3 个 Python 脚本 + 1 个 SKILL.md 编排手册。`fetch_sources.py` 拉取 RSS/主页（多信源并行，返回结构化 JSON）；`build_plates.py` 把素材组织成 linotype 字段格式的 `plates/p1-p4.md`（含归属/中长篇+简讯配比）；`parse_signals.py` 读取 linotype build.py 输出与 .log，解析版面健康报告（fill / overfull / autofit 状态）。SKILL.md 定义编排流程与信号响应规则（反馈环 ≤2 轮）。与 linotype 的接口是**文件系统**：imposer 写 `plates/*.md`，linotype 读它产出 PDF + 信号，imposer 读信号调整再写。
 
 **Tech Stack:** Python 3.10+（标准库 urllib / xml.etree / json / re）、linotype skill（build.py / pdfcheck.py）、可选 `--visual`（pdftoppm + pixelcheck.py）
 
@@ -30,7 +30,7 @@
 ### Task 1: 信源配置（sources.json）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/sources.json`
+- Create: `~/.claude/skills/imposer/scripts/sources.json`
 
 **Interfaces:**
 - Consumes: 设计文档第三节（信源清单，全部已验证可达）
@@ -38,7 +38,7 @@
 
 - [ ] **Step 1: 写信源配置文件**
 
-创建 `~/.claude/skills/compositor/scripts/sources.json`：
+创建 `~/.claude/skills/imposer/scripts/sources.json`：
 
 ```json
 {
@@ -109,13 +109,13 @@
 
 - [ ] **Step 2: 校验 JSON 合法**
 
-Run: `python3 -c "import json; json.load(open('/home/yupeng/.claude/skills/compositor/scripts/sources.json')); print('valid')"`
+Run: `python3 -c "import json; json.load(open('/home/yupeng/.claude/skills/imposer/scripts/sources.json')); print('valid')"`
 Expected: `valid`
 
 - [ ] **Step 3: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: sources.json — 61 verified sources across P1-P4"
+cd ~/news/imposer && git add -A && git commit -m "feat: sources.json — 61 verified sources across P1-P4"
 ```
 
 ---
@@ -123,7 +123,7 @@ cd ~/news/compositor && git add -A && git commit -m "feat: sources.json — 61 v
 ### Task 2: 信源抓取器（fetch_sources.py）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/fetch_sources.py`
+- Create: `~/.claude/skills/imposer/scripts/fetch_sources.py`
 
 **Interfaces:**
 - Consumes: Task 1 的 `sources.json`
@@ -131,11 +131,11 @@ cd ~/news/compositor && git add -A && git commit -m "feat: sources.json — 61 v
 
 - [ ] **Step 1: 写抓取脚本**
 
-创建 `~/.claude/skills/compositor/scripts/fetch_sources.py`：
+创建 `~/.claude/skills/imposer/scripts/fetch_sources.py`：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 信源抓取器 — RSS 首选 + 主页抓取。
+"""imposer 信源抓取器 — RSS 首选 + 主页抓取。
 
 用法: python3 fetch_sources.py <sources.json> <out_dir>
 输出: <out_dir>/sources/pN.md（每版一个，含 URL/记者/站点/标题/摘要）
@@ -274,7 +274,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 写单元测试（RSS 解析 + 归档生成）**
 
-创建 `~/.claude/skills/compositor/tests/test_fetch.py`：
+创建 `~/.claude/skills/imposer/tests/test_fetch.py`：
 
 ```python
 import json, sys, tempfile
@@ -315,13 +315,13 @@ def test_fetch_all_writes_archive(tmp_path):
 
 - [ ] **Step 3: 运行测试验证**
 
-Run: `cd ~/.claude/skills/compositor && python3 -m pytest tests/test_fetch.py -v 2>&1 | tail -5`
+Run: `cd ~/.claude/skills/imposer && python3 -m pytest tests/test_fetch.py -v 2>&1 | tail -5`
 Expected: 2 PASS（若无 pytest，用 `python3 -c "import test_fetch"` 的 assert 兜底）
 
 - [ ] **Step 4: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: fetch_sources.py — RSS+page fetcher with source archive output"
+cd ~/news/imposer && git add -A && git commit -m "feat: fetch_sources.py — RSS+page fetcher with source archive output"
 ```
 
 ---
@@ -329,7 +329,7 @@ cd ~/news/compositor && git add -A && git commit -m "feat: fetch_sources.py — 
 ### Task 3: 信号解析器（parse_signals.py）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/parse_signals.py`
+- Create: `~/.claude/skills/imposer/scripts/parse_signals.py`
 
 **Interfaces:**
 - Consumes: linotype build.py stdout + 编译日志（格式见计划头）
@@ -337,11 +337,11 @@ cd ~/news/compositor && git add -A && git commit -m "feat: fetch_sources.py — 
 
 - [ ] **Step 1: 写信号解析脚本**
 
-创建 `~/.claude/skills/compositor/scripts/parse_signals.py`：
+创建 `~/.claude/skills/imposer/scripts/parse_signals.py`：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 信号解析器 — 读取 linotype build.py 输出与 .log，产出版面健康报告。
+"""imposer 信号解析器 — 读取 linotype build.py 输出与 .log，产出版面健康报告。
 
 用法: python3 parse_signals.py <build_stdout.log> [--log <xelatex.log>]
 输出: 版面健康报告（stdout，人类可读 + 结构化）
@@ -408,7 +408,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 写单元测试**
 
-创建 `~/.claude/skills/compositor/tests/test_signals.py`：
+创建 `~/.claude/skills/imposer/tests/test_signals.py`：
 
 ```python
 import sys
@@ -439,13 +439,13 @@ def test_plate_health_labels():
 
 - [ ] **Step 3: 运行测试**
 
-Run: `cd ~/.claude/skills/compositor && python3 -m pytest tests/test_signals.py -v 2>&1 | tail -5`
+Run: `cd ~/.claude/skills/imposer && python3 -m pytest tests/test_signals.py -v 2>&1 | tail -5`
 Expected: 3 PASS
 
 - [ ] **Step 4: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: parse_signals.py — linotype build output → plate health report"
+cd ~/news/imposer && git add -A && git commit -m "feat: parse_signals.py — linotype build output → plate health report"
 ```
 
 ---
@@ -453,7 +453,7 @@ cd ~/news/compositor && git add -A && git commit -m "feat: parse_signals.py — 
 ### Task 4: 素材成版器（build_plates.py）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/scripts/build_plates.py`
+- Create: `~/.claude/skills/imposer/scripts/build_plates.py`
 
 **Interfaces:**
 - Consumes: Task 2 的抓取结果（sources/pN.md 或 JSON）、Task 3 的版面健康报告（回调调整用）
@@ -461,11 +461,11 @@ cd ~/news/compositor && git add -A && git commit -m "feat: parse_signals.py — 
 
 - [ ] **Step 1: 写素材成版脚本**
 
-创建 `~/.claude/skills/compositor/scripts/build_plates.py`：
+创建 `~/.claude/skills/imposer/scripts/build_plates.py`：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 素材成版器 — 抓取素材 → linotype 字段格式的 plates/pN.md。
+"""imposer 素材成版器 — 抓取素材 → linotype 字段格式的 plates/pN.md。
 
 用法: python3 build_plates.py <fetch_results.json> <out_dir>
 输出: <out_dir>/plates/p1.md ... p4.md（linotype 消费）
@@ -591,7 +591,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 写单元测试**
 
-创建 `~/.claude/skills/compositor/tests/test_build_plates.py`：
+创建 `~/.claude/skills/imposer/tests/test_build_plates.py`：
 
 ```python
 import json, sys
@@ -637,13 +637,13 @@ def test_write_plates_outputs_files(tmp_path):
 
 - [ ] **Step 3: 运行测试**
 
-Run: `cd ~/.claude/skills/compositor && python3 -m pytest tests/test_build_plates.py -v 2>&1 | tail -5`
+Run: `cd ~/.claude/skills/imposer && python3 -m pytest tests/test_build_plates.py -v 2>&1 | tail -5`
 Expected: 5 PASS
 
 - [ ] **Step 4: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: build_plates.py — fetch results → linotype field-format plates"
+cd ~/news/imposer && git add -A && git commit -m "feat: build_plates.py — fetch results → linotype field-format plates"
 ```
 
 ---
@@ -651,7 +651,7 @@ cd ~/news/compositor && git add -A && git commit -m "feat: build_plates.py — f
 ### Task 5: SKILL.md 编排手册
 
 **Files:**
-- Create: `~/.claude/skills/compositor/SKILL.md`
+- Create: `~/.claude/skills/imposer/SKILL.md`
 
 **Interfaces:**
 - Consumes: Task 2-4 的脚本；linotype skill（`~/.claude/skills/linotype`）
@@ -659,19 +659,19 @@ cd ~/news/compositor && git add -A && git commit -m "feat: build_plates.py — f
 
 - [ ] **Step 1: 写 SKILL.md**
 
-创建 `~/.claude/skills/compositor/SKILL.md`：
+创建 `~/.claude/skills/imposer/SKILL.md`：
 
 ```markdown
 ---
-name: compositor
+name: imposer
 description: Use when the user wants to produce a daily English newspaper (英文日报/报纸/做今天的日报/出报). Organizes source material from authoritative China-friendly news sources into linotype plates, runs linotype typesetting, reads its signals (Overfull/fill/visual diagnostics) and responds by trimming/adding/swapping content. Companion to the linotype typesetting skill.
 ---
 
-# compositor — 英文日报编排
+# imposer — 英文日报编排
 
 ## 定位
 
-compositor 是 linotype 的**排字工**：组织 4 版素材 → 调用 linotype 排版 → 读取其信号（Overfull/fill/视觉诊断）→ 自动响应（裁段/补简讯/换条）→ 产出 PDF + 信源归档 + 工作日志。
+imposer 是 linotype 的**排字工**：组织 4 版素材 → 调用 linotype 排版 → 读取其信号（Overfull/fill/视觉诊断）→ 自动响应（裁段/补简讯/换条）→ 产出 PDF + 信源归档 + 工作日志。
 
 **铁律**：材料组织与版面纪律耦合——写出的 plates 第一轮就接近版面，反馈环只是微调（≤2 轮）。
 
@@ -681,20 +681,20 @@ compositor 是 linotype 的**排字工**：组织 4 版素材 → 调用 linotyp
 # 1. 建当日工作区
 DAILY=~/news/daily/$(date +%F); mkdir -p $DAILY/sources $DAILY/plates
 # 2. 抓取信源（4 版并行）
-python3 ~/.claude/skills/compositor/scripts/fetch_sources.py \
-  ~/.claude/skills/compositor/scripts/sources.json $DAILY > $DAILY/fetch.log
+python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
+  ~/.claude/skills/imposer/scripts/sources.json $DAILY > $DAILY/fetch.log
 # 3. 组织成版（需人工审查素材后执行——见"审料门"）
-python3 ~/.claude/skills/compositor/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
+python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 # 4. 调 linotype 排版（autofit 默认开）
 python3 ~/news/latex/build.py $DAILY/plates $DAILY/out.tex \
   --docopts "paper=a3,landscape,columns=3,plates=2" --visual > $DAILY/build.log 2>&1
 # 5. 读信号 → 版面健康报告
-python3 ~/.claude/skills/compositor/scripts/parse_signals.py $DAILY/build.log --log $DAILY/out.log
+python3 ~/.claude/skills/imposer/scripts/parse_signals.py $DAILY/build.log --log $DAILY/out.log
 ```
 
 ## 信号响应规则（灵魂）
 
-| linotype 信号 | compositor 响应 |
+| linotype 信号 | imposer 响应 |
 |---|---|
 | fill < 45%（某版太空） | 该版补 1-2 条简讯 / 扩写主条段落 |
 | Overfull plate 警告 | 裁段（末段起）→ 换次条 → 减简讯 |
@@ -724,7 +724,7 @@ $DAILY/
 ├── sources/p1-p4.md   # 信源归档（URL/记者/站点/摘要）
 ├── plates/p1-p4.md    # linotype 消费
 ├── out.pdf + out.log + out.tex + layout.json
-└── fetch.log + build.log + compositor.log  # 工作日志
+└── fetch.log + build.log + imposer.log  # 工作日志
 ```
 
 ## 诚实原则
@@ -735,13 +735,13 @@ $DAILY/
 
 - [ ] **Step 2: 验证 front matter 合法**
 
-Run: `head -5 ~/.claude/skills/compositor/SKILL.md | grep -q "name: compositor" && echo ok`
+Run: `head -5 ~/.claude/skills/imposer/SKILL.md | grep -q "name: imposer" && echo ok`
 Expected: `ok`
 
 - [ ] **Step 3: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: compositor SKILL.md — one-key daily newspaper orchestration manual"
+cd ~/news/imposer && git add -A && git commit -m "feat: imposer SKILL.md — one-key daily newspaper orchestration manual"
 ```
 
 ---
@@ -749,7 +749,7 @@ cd ~/news/compositor && git add -A && git commit -m "feat: compositor SKILL.md �
 ### Task 6: 端到端集成（真实信源首期样报）
 
 **Files:**
-- Modify: `~/news/compositor/docs/superpowers/specs/2026-08-05-compositor-design.md`（如有偏差记录）
+- Modify: `~/news/imposer/docs/superpowers/specs/2026-08-05-imposer-design.md`（如有偏差记录）
 - Create: `~/news/daily/2026-08-05/`（首期工作区，交付物）
 
 **Interfaces:**
@@ -760,8 +760,8 @@ cd ~/news/compositor && git add -A && git commit -m "feat: compositor SKILL.md �
 
 ```bash
 DAILY=~/news/daily/2026-08-05; mkdir -p $DAILY/sources $DAILY/plates
-python3 ~/.claude/skills/compositor/scripts/fetch_sources.py \
-  ~/.claude/skills/compositor/scripts/sources.json $DAILY 2>&1 | tail -8
+python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
+  ~/.claude/skills/imposer/scripts/sources.json $DAILY 2>&1 | tail -8
 ```
 Expected: P1-P4 各有新闻（个别信源失败属正常，记录日志）
 
@@ -772,10 +772,10 @@ Expected: P1-P4 各有新闻（个别信源失败属正常，记录日志）
 - [ ] **Step 3: 成版 + 排版 + 读信号**
 
 ```bash
-python3 ~/.claude/skills/compositor/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
+python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 python3 ~/news/latex/build.py $DAILY/plates $DAILY/out.tex \
   --docopts "paper=a3,landscape,columns=3,plates=2" --visual > $DAILY/build.log 2>&1
-python3 ~/.claude/skills/compositor/scripts/parse_signals.py $DAILY/build.log --log $DAILY/out.log
+python3 ~/.claude/skills/imposer/scripts/parse_signals.py $DAILY/build.log --log $DAILY/out.log
 ```
 Expected: 版面健康报告；不达标按信号规则自动调（≤2 轮）
 
@@ -787,7 +787,7 @@ Expected: 全部存在；out.pdf 可打开
 - [ ] **Step 5: 记录偏差并提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: first daily edition — E2E verified, PDF+archive+logs delivered"
+cd ~/news/imposer && git add -A && git commit -m "feat: first daily edition — E2E verified, PDF+archive+logs delivered"
 ```
 
 ---
@@ -795,7 +795,7 @@ cd ~/news/compositor && git add -A && git commit -m "feat: first daily edition �
 ### Task 7: 回归测试套件（run_tests.py）
 
 **Files:**
-- Create: `~/.claude/skills/compositor/tests/run_tests.py`
+- Create: `~/.claude/skills/imposer/tests/run_tests.py`
 
 **Interfaces:**
 - Consumes: Task 2-4 的脚本与测试
@@ -803,11 +803,11 @@ cd ~/news/compositor && git add -A && git commit -m "feat: first daily edition �
 
 - [ ] **Step 1: 写回归套件**
 
-创建 `~/.claude/skills/compositor/tests/run_tests.py`：
+创建 `~/.claude/skills/imposer/tests/run_tests.py`：
 
 ```python
 #!/usr/bin/env python3
-"""compositor 回归测试 — 一键跑全部单元测试。"""
+"""imposer 回归测试 — 一键跑全部单元测试。"""
 import sys, subprocess
 from pathlib import Path
 
@@ -835,13 +835,13 @@ if __name__ == "__main__":
 
 - [ ] **Step 2: 运行并确认全绿**
 
-Run: `cd ~/.claude/skills/compositor && python3 tests/run_tests.py`
+Run: `cd ~/.claude/skills/imposer && python3 tests/run_tests.py`
 Expected: `✅ 全部通过`（10 项测试）
 
 - [ ] **Step 3: 提交**
 
 ```bash
-cd ~/news/compositor && git add -A && git commit -m "feat: run_tests.py — compositor regression suite (10 tests)"
+cd ~/news/imposer && git add -A && git commit -m "feat: run_tests.py — imposer regression suite (10 tests)"
 ```
 
 ---
