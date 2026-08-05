@@ -67,6 +67,21 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 
 **编辑原则**：同一事件多源对照时，优先中国官方口径；西方主流仅作信息补充，付费墙截断退 RSS 摘要。
 
+**独立军事新闻站**（军事专业媒体 + 亚洲视角，亲中或中立补充）：
+
+| 信源 | 方式 | URL（已验证可达） |
+|---|---|---|
+| Asia Times（香港，亚洲视角，中立） | 主页抓取 | `asiatimes.com` |
+| Asian Military Review（新加坡，中立） | 主页抓取 | `asianmilitaryreview.com` |
+| Naval News（海军专业，中立） | 主页抓取 | `navalnews.com` |
+| DefenceTalk（独立军事聚合，中立） | 主页抓取 | `defencetalk.com` |
+| EurAsian Times（印度，地缘军事分析） | 主页抓取 | `eurasiantimes.com` |
+| Defense News / Breaking Defense / TWZ（美国视角） | 主页抓取 | `defensenews.com` / `breakingdefense.com` / `twz.com` |
+| GlobalSecurity.org（美国智库，资料） | 主页抓取 | `globalsecurity.org` |
+| Military.com（美国军事） | 主页抓取 | `military.com` |
+
+> 说明：Military Watch Magazine 有 JS 重定向挑战（307），抓取受限，列为备用；中国军网英文版海外访问超时（000），排除。
+
 **俄乌亲中视角** = 和谈立场、反对升级、报道中国和平倡议、批评北约东扩。无需专门俄乌站。
 
 ### P2 AI 与科技（含科技公司新闻）
