@@ -62,15 +62,32 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 
 **公司官方新闻室/博客 = 一手权威**（产品发布、公司公告、技术进展），优先于第三方转载。
 
+**国际 AI/科技公司：**
+
 | 信源 | 方式 | URL（已验证 200） |
 |---|---|---|
 | Google（官方博客） | 主页抓取 | `blog.google` |
 | OpenAI（新闻室） | 主页抓取 | `openai.com/news/` |
-| Cloudflare（官方博客） | RSS | `blog.cloudflare.com/rss/` |
 | Anthropic（新闻室） | 主页抓取 | `anthropic.com/news` |
-| Amazon（新闻室） | 主页抓取 | `aboutamazon.com/news` |
+| NVIDIA（新闻室） | 主页抓取 | `nvidianews.nvidia.com` |
+| Cloudflare（官方博客） | RSS | `blog.cloudflare.com/rss/` |
 | Microsoft（官方博客） | RSS | `blogs.microsoft.com/feed/` |
 | GitHub（官方博客） | RSS | `github.blog/feed/` |
+| Amazon（新闻室） | 主页抓取 | `aboutamazon.com/news` |
+
+**中国 AI 大模型公司（英文站）：**
+
+| 信源 | 方式 | URL（已验证 200） |
+|---|---|---|
+| Moonshot AI（Kimi） | 主页抓取 | `moonshotai.com` |
+| Z.ai / Zhipu（GLM，英文界面） | 主页抓取 | `zhipuai.cn` |
+| DeepSeek（英文站） | 主页抓取 | `deepseek.com/en` |
+| Alibaba（阿里集团英文新闻室） | 主页抓取 | `alibabagroup.com/en/news` |
+
+**技术媒体补充：**
+
+| 信源 | 方式 | URL |
+|---|---|---|
 | CGTN Tech / Xinhua 科技 | RSS/主页 | 同上 |
 | MIT Technology Review（技术事实补充） | RSS | `technologyreview.com/feed/` |
 | Ars Technica（技术事实补充） | RSS | `feeds.arstechnica.com/arstechnica/technology-lab` |
