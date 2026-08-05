@@ -19,6 +19,61 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chr
 TIMEOUT = 8
 SUMMARY_TOP_N = 2   # fetch_page 只对前 N 条候选抓首段摘要（控请求数，防整轮超时）
 
+# ---- 审料门前置过滤（终审 I-5）：URL 合法性 + 明显非文章链接 ----
+# 路径标记：命中即视为导航/列表/多媒体页而非文章页
+NON_ARTICLE_URL_MARKERS = (
+    "/about", "/careers", "/jobs", "/podcast", "/podcasts", "/video",
+    "/multimedia", "/audio", "/newsletter", "/privacy", "/terms", "/sitemap",
+    "/rss", "/feed/", "/tag/", "/tags/", "/topics/", "/author/", "/login",
+    "/signup", "/subscribe", "/advertise", "/wp-login", "/search",
+    "/category/", "/categories/",
+)
+# 标题标记：导航/非文章标题（如 Anthropic 页的 "Download press kit"、
+# 无障碍跳转链接 "Skip to main content"）
+JUNK_TITLE_MARKERS = (
+    "how to get support", "download press kit", "press kit", "contact us",
+    "about us", "sign in", "log in", "subscribe", "newsletter",
+    "privacy policy", "terms of service", "cookie policy", "advertise with",
+    "skip to main content", "skip to page content", "skip to navigation",
+    "skip to content", "opens in a new window", "opens in a new tab",
+)
+_EMAIL_TITLE_RE = re.compile(r"^[\w.+-]+@[\w-]+\.\w+$")
+# 摘要段落垃圾标记（中文媒体英文版 stub 页常见）：跳过非文章段落
+JUNK_PARA_MARKERS = ("file photo", "additional context from", "all rights reserved")
+
+
+def is_article_url(url: str) -> bool:
+    """URL 合法性过滤：仅 http/https、非备案页、非明显导航/列表链接。
+
+    排除: javascript:; 空链接、mailto:/tel:、beian.miit.gov.cn ICP 备案页、
+    /about /podcast /rss 等导航路径（成版前的第一道审料门）。
+    """
+    url = url.strip()
+    if url.startswith(("javascript:", "mailto:", "tel:", "#", "/", "?")):
+        return False
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = parsed.hostname or ""
+    if host == "beian.miit.gov.cn" or host.endswith(".beian.miit.gov.cn"):
+        return False
+    path = parsed.path.lower()
+    return not any(marker in path for marker in NON_ARTICLE_URL_MARKERS)
+
+
+def is_junk_title(title: str) -> bool:
+    """标题垃圾过滤：邮箱样标题、导航文案（如 'Download press kit'）。"""
+    t = title.strip().lower()
+    if _EMAIL_TITLE_RE.match(t):
+        return True
+    return any(m in t for m in JUNK_TITLE_MARKERS)
+
+
+def is_junk_paragraph(text: str) -> bool:
+    """摘要段落垃圾过滤：图片说明/stub 填充文案不作文本段。"""
+    t = text.lower()
+    return any(m in t for m in JUNK_PARA_MARKERS)
+
 
 def http_get(url: str) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
@@ -79,6 +134,7 @@ def fetch_rss(source: dict, max_items: int = 8) -> list[dict]:
         return []
     _strip_ns(root)
     items = []
+    seen_urls, seen_titles = set(), set()
     # 兼容 RSS 2.0 (item) 与 Atom (entry)
     is_atom = root.find(".//item") is None
     for item in root.iter("entry" if is_atom else "item"):
@@ -95,12 +151,23 @@ def fetch_rss(source: dict, max_items: int = 8) -> list[dict]:
         if not link:  # Atom 的 link 是属性
             link_el = item.find("link")
             link = link_el.get("href", "") if link_el is not None else ""
+        if link:
+            link = urllib.parse.urljoin(source["url"], link)  # 相对链接解析为绝对
         desc = text("description") or text("summary") or text("content")
         author = text("dc:creator") or text("creator") or text("author") or text("author/name") or ""
         date = text("pubDate") or text("updated") or ""
-        if title and link:
-            items.append({"title": title, "url": link, "summary": strip_tags(desc)[:400],
-                          "author": author, "date": date})
+        if not (title and link):
+            continue
+        if not is_article_url(link) or is_junk_title(title):
+            continue  # 审料门第一道：非法/导航 URL 与垃圾标题不进入素材
+        # 去重（终审 I-2）：同 URL 只保留首个；同标题（含大小写/空白差异）只保留首个
+        norm_title = " ".join(title.lower().split())
+        if link in seen_urls or norm_title in seen_titles:
+            continue
+        seen_urls.add(link)
+        seen_titles.add(norm_title)
+        items.append({"title": title, "url": link, "summary": strip_tags(desc)[:400],
+                      "author": author, "date": date})
         if len(items) >= max_items:
             break
     return items
@@ -115,11 +182,13 @@ def _fetch_summary(url: str, max_chars: int = 400) -> str:
         html = http_get(url)
     except Exception:
         return ""
-    # 优先 <p> 段落文本（跳过 script/style/nav/footer）
+    # 优先 <p> 段落文本（跳过 script/style/nav/footer；图片说明/stub 填充段落剔除；
+    # 无句末标点（.?!）的段落视为导航/列表文本——真实导语必有句号）
     paras = []
     for m in re.finditer(r"<p[^>]*>(.*?)</p>", html, flags=re.S):
         text = strip_tags(m.group(1))
-        if text and len(text) > 40:
+        if (text and len(text) > 40 and not is_junk_paragraph(text)
+                and re.search(r"[.!?]", text)):
             paras.append(text)
     if not paras:
         return ""
@@ -145,29 +214,35 @@ def fetch_page(source: dict, max_items: int = 8) -> list[dict]:
     for m in re.finditer(r"<h[23][^>]*>\s*<a[^>]*href=([\"'])([^\"']+)\1[^>]*>(.*?)</a>\s*</h[23]>",
                          html, flags=re.S):
         href, title = m.group(2), strip_tags(m.group(3))
-        if title and len(title) > 15 and not href.startswith("#"):
-            candidates.append({"title": title, "url": urllib.parse.urljoin(source["url"], href),
+        url = urllib.parse.urljoin(source["url"], href)
+        if title and len(title) > 15 and is_article_url(url) and not is_junk_title(title):
+            candidates.append({"title": title, "url": url,
                                "summary": "", "author": "", "date": ""})
     # 2) 兜底：一般锚文本（无 h2/h3 的站点，如 globaltimes.cn）
     if len(candidates) < max_items:
-        seen_titles = {c["title"] for c in candidates}
+        seen_titles = {" ".join(c["title"].lower().split()) for c in candidates}
         for m in re.finditer(r"<a[^>]*href=([\"'])([^\"']+)\1[^>]*>(.*?)</a>", html, flags=re.S):
             href, title = m.group(2), strip_tags(m.group(3))
-            if (title and len(title) > 15 and not href.startswith("#")
-                    and " " not in href and title not in seen_titles):
-                candidates.append({"title": title, "url": urllib.parse.urljoin(source["url"], href),
+            url = urllib.parse.urljoin(source["url"], href)
+            norm_title = " ".join(title.lower().split())
+            if (title and len(title) > 15 and is_article_url(url) and not is_junk_title(title)
+                    and " " not in href and norm_title not in seen_titles):
+                candidates.append({"title": title, "url": url,
                                    "summary": "", "author": "", "date": ""})
-                seen_titles.add(title)
+                seen_titles.add(norm_title)
             if len(candidates) >= max_items:
                 break
-    # 去重（同标题保留首个），限数量；只对前 SUMMARY_TOP_N 条抓首段摘要（控请求数防慢）
-    seen, out = set(), []
+    # 去重（同标题/同 URL 各保留首个，终审 I-2），限数量；只对前 SUMMARY_TOP_N 条抓首段摘要
+    seen_titles, seen_urls, out = set(), set(), []
     for c in candidates:
-        if c["title"] not in seen:
-            seen.add(c["title"])
-            if len(out) < SUMMARY_TOP_N:
-                c["summary"] = _fetch_summary(c["url"])
-            out.append(c)
+        norm_title = " ".join(c["title"].lower().split())
+        if norm_title in seen_titles or c["url"] in seen_urls:
+            continue
+        seen_titles.add(norm_title)
+        seen_urls.add(c["url"])
+        if len(out) < SUMMARY_TOP_N:
+            c["summary"] = _fetch_summary(c["url"])
+        out.append(c)
         if len(out) >= max_items:
             break
     return out

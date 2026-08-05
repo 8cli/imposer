@@ -51,13 +51,18 @@ Topic / min_kind per plate: P1 world/military + china-official · P2 ai/tech + c
 - Raw text, no pre-escaping — Linotype's `build.py` escapes fields (pre-escaping caused double-escape `5%` → `5\\%`).
 - P1 uses `LAYOUT: main-aside`; P2/P3/P4 `COLUMNS: 3`.
 - STORY-B followed by direct paragraphs (a `BODY:` line after STORY-B routes into the main body — Linotype parsing quirk).
+- Selection key (post final review): `topic penalty → supplied-slot match → kind rank → length`. Supplied items (`used=True` + matching `request.words` slot) are preferred, so demand-supply backfill actually lands in the pages; a supplied 60-word brief never steals a main slot (slot mismatch = neutral).
+- Story-level dedup (I-2): same URL / same normalized title selected once (fetch-level too).
+- Recency (I-3): `is_stale` (date >30 days, RFC2822 + ISO parse) excludes archive stories; date-less items kept.
+- Topic (I-4, lightweight): per-plate negative title keywords deprioritize obviously off-topic items (and record them); supply hard-skips them. General-China feed leaks that miss the keyword list are caught by the review gate.
 - Source-rank priority (China-friendly): china-official < thinktank < agency < company < china-ai < independent < tech-media < aggregator < western.
 - Attribution: `By {reporter} · {source}`; no reporter → `By {source} News Desk`; briefs end with `— {source}.`
 
 ## Supply matching (supply.py)
 
-- `match_cache`: kind rank ≤ request min_kind, word count within `[min, max]` (no slack — over-length goes to rewrite), English filter, skip used URLs.
-- Rewrite fallback: closest in-kind material flagged `needs_rewrite` + `target_words`; `rewrite_fn` (rewrite.py) compresses.
+- `match_cache`: kind rank ≤ request min_kind, word count within `[min, max]` (no slack — over-length goes to rewrite), English filter, skip used URLs, skip stale (date >30d) and topic-mismatched (title keyword penalty) items.
+- Rewrite fallback: closest in-kind material flagged `needs_rewrite` + `target_words`; `rewrite_fn` (rewrite.py) compresses. Failure is per-item fault-tolerant (try/except keeps the original + warning — a rewrite outage never aborts the supply round).
+- Used persistence (C-1b): every supplied item is marked `used=True` **in place** and carries the matched `request` — cache backfill then persists both, so round 2 never re-supplies the same story and build_plates can match slots.
 - Dedupe: fetch_fn results recorded in `used`; duplicate URLs discarded (宁缺毋滥).
 
 ## Lessons (integrations surfaced by E2E)
@@ -69,13 +74,17 @@ Topic / min_kind per plate: P1 world/military + china-official · P2 ai/tech + c
 5. **Summaries cap at ~70 words** — first-paragraph extraction cannot supply `main` (250-400 word) specs. Compress-only means short material stays short; directed full-article fetch is the extension point.
 6. **Concurrent fetch needs as_completed** — `ex.map` blocks on the slowest worker; `as_completed` returns as each finishes. Plus per-request timeout (8s) so slow sources don't stall the whole round.
 7. **Short sources never satisfy big deficits** — "compress-only" + sparse cache means underfilled plates persist; honest reporting (≤2 rounds, then stop) is the contract.
+8. **Font-scaling is not backfill** — autofit raises fill by enlarging type; only content backfill raises it structurally. Never report "fill rose" as loop evidence (the first E2E report made this error; corrected in Phase 5).
+9. **Dedup must keep the annotated original** — supply attaches `request` to backfilled *copies*; a URL-dedup that keeps the first (unannotated) occurrence silently drops slot priority. Mark the original in place (C-1b fix).
+10. **Overfull has four faces** — linotype.cls emits `Overfull plate: content`, `main column`, `aside column`, `mainstory`. Matching only `plate: content` missed real truncations (a 6pt mainstory cut on P1).
 
 ## QA layers
 
 | Layer | What | Failure mode |
 |---|---|---|
-| Unit tests | 20 tests (fetch 6 / demand 3 / supply 3 / build_plates 8), no pytest needed | any pipeline regression |
-| Compile-time | Linotype `Overfull plate` warnings + fill typeout | content exceeds viewport |
+| Unit tests | 38 tests (fetch 8 / demand 4 / supply 8 / build_plates 13 / rewrite 5), no pytest needed | any pipeline regression |
+| Review gate | human pass over the material manifest before composing (SKILL.md 审料门, 5 checks) | junk that beats the automatic filters reaches a plate |
+| Compile-time | Linotype Overfull warnings (`plate: content` / `main column` / `aside column` / `mainstory`) + fill typeout | content exceeds viewport |
 | Demand check | `parse_demand.py` — health report + order sheets | underfilled plates trigger supply |
 | Visual | Linotype `--visual` pixel-check (blank bands) | visually sparse pages |
 
@@ -84,3 +93,6 @@ Topic / min_kind per plate: P1 world/military + china-official · P2 ai/tech + c
 - **Compress-only**: short material used as-is; big deficits may persist without directed full-article fetching.
 - **Rewrite needs LLM**: `rewrite.py` requires `anthropic` + API key (or Claude CLI); everything else works without it.
 - **Source volatility**: rate-limits (Blue Origin 429, Microsoft 403) are logged and skipped, not fatal.
+- **Residual scrape junk**: page-scraped sources can leak nav/topic-page links (RAND topic pages, Amazon nav) that beat the automatic filters — the review gate is the designed catch; per-source parsing rules are the extension point.
+- **Residual topic leaks**: general-China feeds (China Daily RSS) in P3/P4 can supply politics stories that miss the lightweight keyword list — review gate catches; per-section source curation or stronger topic signals are the extension point.
+- **Brief slots cap at 3/plate**: brief-based supply cannot structurally converge a plate past ~3 briefs + 2 mains; larger deficits need a main-story upgrade or directed full-article fetch.

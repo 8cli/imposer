@@ -40,6 +40,29 @@ def test_converged_visual_and_fills():
     check(h[1].endswith("SPARSE→按单补稿"), f"稀疏版应标 SPARSE→按单补稿: {h[1]!r}")
 
 
+def test_overfull_all_patterns():
+    """终审 I-1：linotype.cls 全部 4 种 Overfull 模式均被检出（此前只匹配 plate: content）。"""
+    logs = [
+        "Overfull plate: content 1000pt > contentH 900pt",
+        "Overfull main column: 内容 500pt > contentH 450pt，截断",
+        "Overfull aside column: 内容 300pt > contentH 250pt，截断",
+        "Overfull mainstory: 内容超高，截断 40pt",
+    ]
+    for log in logs:
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "out.log"
+            p.write_text(log)
+            r = pd.parse_build_output("", p)
+        check(r["overfull"], f"未检出模式: {log}")
+        check(any("Overfull" in m for m in r["messages"]), f"缺 Overfull 提示: {r['messages']}")
+    # 正常日志（无 Overfull）不误报
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / "out.log"
+        p.write_text("Plate content: 700pt/ contentH 742pt")
+        r = pd.parse_build_output("", p)
+    check(not r["overfull"], "无 Overfull 的正常日志不应误报")
+
+
 def test_demand_parsed():
     with tempfile.TemporaryDirectory() as td:
         d = Path(td) / "demand.json"
@@ -61,12 +84,13 @@ def main():
     test_converged_visual_and_fills()
     test_demand_parsed()
     test_plate_health_labels()
+    test_overfull_all_patterns()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print("ALL TESTS PASSED (3 tests)")
+    print("ALL TESTS PASSED (4 tests)")
 
 
 if __name__ == "__main__":

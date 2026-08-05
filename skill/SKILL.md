@@ -30,31 +30,83 @@ cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
   --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --visual --demand > $DAILY/build.log 2>&1 && cd -
 # 5. 读需求 → 版面健康报告 + 补稿单
 python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
-# 6. 需求-供给闭环：按单补稿 → LLM 压缩改写（只压缩不扩写）→ 回填 → 重排
-#    直到 linotype 返回"已填满"（demand.json 无需求或 ≤2 轮上限）
+# 6. 需求-供给闭环：按单补稿 → LLM 压缩改写（只压缩不扩写）→ 回填 → 重新成版 → 重排
+#    直到 linotype 返回"已填满"（demand.json 无需求或 ≤2 轮上限）。
+#    铁律：每轮 supply 后必须重跑 build_plates.py 重新成版——否则 plates 不更新、
+#    demand.json 永不变化，循环空转（终审 C-1a）。supply 输出带 used=True 标记，
+#    回写缓存即持久化，第 2 轮不会重复供给同一批素材（终审 C-1b）。
 python3 - <<'PYEOF'
-import json, sys, subprocess
+import json, subprocess
 from pathlib import Path
-sys.path.insert(0, str(Path.home() / ".claude/skills/imposer/scripts"))
-import supply, rewrite
+import sys
+SKILL = Path.home() / ".claude/skills/imposer/scripts"
 DAILY = Path.home() / "news/daily" / subprocess.run(["date", "+%F"], capture_output=True, text=True).stdout.strip()
+sys.path.insert(0, str(SKILL))
+import supply, rewrite
+
+def build_plates():
+    subprocess.run(["python3", str(SKILL / "build_plates.py"), str(DAILY / "fetch_results.json"), str(DAILY)],
+                   capture_output=True)
+
+def typeset():
+    r = subprocess.run(["python3", "build.py", str(DAILY / "plates"), str(DAILY / "out.tex"),
+                        "--docopts", "paper=a3,landscape,columns=3,plates=2,fill_min=0.65", "--demand"],
+                       cwd=str(Path.home() / "news/latex"), capture_output=True)
+    (DAILY / "build.log").write_bytes(r.stdout + r.stderr)  # 供 parse_demand.py 重读
+    return r.returncode
+
+unmet = None  # 未满足需求（诚实报告的载体）
 for round_no in range(1, 3):  # ≤2 轮防死循环
     demand = json.load(open(DAILY / "demand.json")) if (DAILY / "demand.json").exists() else {"plates": {}}
     if not demand.get("plates"):
         print(f"✅ 第 {round_no-1} 轮后已填满（无需求）"); break
     cache = json.load(open(DAILY / "fetch_results.json"))
-    sources = json.load(open(str(Path.home() / ".claude/skills/imposer/scripts/sources.json")))
+    sources = json.load(open(str(SKILL / "sources.json")))
     supplied = supply.supply_requests(demand, cache, sources, DAILY, rewrite_fn=rewrite.rewrite)
     if not any(supplied.values()):
-        print(f"⚠️ 第 {round_no} 轮无供给（素材用尽），停止"); break
+        print(f"⚠️ 第 {round_no} 轮无供给（素材用尽/题材不匹配），停止并报告"); unmet = demand.get("plates", {}); break
     for plate, items in supplied.items():
-        for i in items: cache[plate].append(i)
+        for i in items: cache[plate].append(i)   # 携带 used=True 回写，第 2 轮不再重复供给
     with open(DAILY / "fetch_results.json", "w") as f: json.dump(cache, f, ensure_ascii=False, indent=2)
-    print(f"🔄 第 {round_no} 轮补稿 {sum(len(v) for v in supplied.values())} 条 → 重排")
-    subprocess.run(["python3", "build.py", str(DAILY / "plates"), str(DAILY / "out.tex"),
-                    "--docopts", "paper=a3,landscape,columns=3,plates=2,fill_min=0.65", "--demand"],
-                   cwd=str(Path.home() / "news/latex"), capture_output=True)
+    print(f"🔄 第 {round_no} 轮补稿 {sum(len(v) for v in supplied.values())} 条 → 重新成版 → 重排")
+    build_plates()                                # 关键：先重新成版，plates 才反映补稿
+    if typeset() != 0:
+        print(f"  ⚠️ 重排失败（见 {DAILY}/build.log），停止并报告"); unmet = demand.get("plates", {}); break
+else:
+    # 2 轮跑完仍未收敛 → 诚实报告，不静默退出（终审 C-1d）
+    unmet = json.load(open(DAILY / "demand.json")).get("plates", {})
+if unmet:
+    print("⚠️ 停止并报告：以下需求在 ≤2 轮内未满足（不硬调，宁缺勿滥）")
+    for plate, info in unmet.items():
+        reqs = info.get("requests", [])
+        fill = info.get("fill")
+        fill_s = f"{fill*100:.0f}%" if isinstance(fill, (int, float)) else "?"
+        total = sum(r.get("count", 1) for r in reqs)
+        print(f"  {plate}: fill {fill_s}，{total} 条未满足（{len(reqs)} 项需求）— {reqs}")
+    print("  可定向抓取全文（supply fetch_fn）后重试，或人工接受当前版面")
 PYEOF
+
+## 审料门（成版前必过，终审 I-5）
+
+**成版不是机械拼贴——抓取素材进版面之前，必须人工审阅一次。** 这是垃圾素材
+（导航文本、播客页、ICP 备案页、`javascript:;` 链接、过期归档稿）直达版面的最后防线。
+
+1. **读清单**：打开 `$DAILY/sources/p1.md … p4.md`（或直接看 `fetch_results.json`），
+   逐条过目每条素材的标题 / 归属（Byline）/ 题材 / 时间 / URL。
+2. **五项检查**，任一不过即淘汰：
+   - **标题**：是新闻标题而非导航文案（"Download press kit"、邮箱、`About Us`）
+   - **归属**：有记者名或站点名，可溯源
+   - **题材**：与版块题材一致（P1 world/military · P2 ai/tech · P3 space · P4 china-tech）；
+     纪念稿/体育稿等明显不相关者淘汰（build_plates 已自动降权并打印记录，人工复核）
+   - **时效**：date 字段明显过期（>30 天）的归档稿淘汰（build_plates 已自动排除）
+   - **URL 合法性**：`http(s)`、非备案页、非 `javascript:` / `#` / 导航链接
+     （fetch_sources 已前置过滤，人工抽查）
+3. **确认后成版**：审阅通过才执行 `build_plates.py`。
+4. **闭环补稿同样过门**：供给补入的素材（`used=True` 标记）随缓存回写进版，若对
+   供给结果有疑问，重跑 `parse_demand.py` 查看补稿清单后人工确认。
+
+> 说明：`fetch_sources.py` 的 URL 合法性过滤、`build_plates.py` 的题材降权/时效过滤
+> 是**自动前置门**；审料门是**人工总闸**——自动门挡常规垃圾，人工门挡漏网之鱼。
 
 ## 需求-供给契约（灵魂）
 
@@ -78,7 +130,7 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 | autofit ❌ 边界内无法放下 | 接受 + 报告用户人工决策（不硬调） |
 | --visual ❌ 空白带 | 调配比（增/减内容）或接受 |
 
-**反馈环**：补稿 → 重排 → 重读需求，**最多 2 轮**。仍不达标 → 停止 + 诚实报告。
+**反馈环**：补稿 → **重新成版（build_plates）** → 重排 → 重读需求，**最多 2 轮**。仍不达标 → 停止 + 诚实报告（列出未满足需求，不静默退出）。
 
 ## 信源与归属
 

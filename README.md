@@ -54,9 +54,9 @@ plates/p1-p4.md  ──►  linotype build.py --demand (xelatex)
                      out.pdf + demand.json (order sheet)
                           │
                           ▼
-      supply.py ──► rewrite.py (LLM compress) ──► backfill cache
+      supply.py ──► rewrite.py (LLM compress) ──► backfill cache (used=True)
       │   ▲                                        │
-      └───  iterate ≤2 rounds until demand.json empty ──┘
+      └───  iterate ≤2 rounds until demand.json empty — or honest stop ──┘
 ```
 
 ## Quick Start
@@ -80,7 +80,23 @@ python3 scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $
 #    (full loop script in SKILL.md)
 ```
 
-The first daily edition (2026-08-05): 54 sources → 4 plates → Linotype autofit converged, demand-supply closed loop verified (P1 filled 59→65%+, P4 main-story deficit eliminated 48→55%).
+The first daily edition (2026-08-05), honestly reported: 54 sources → 4 plates → Linotype typeset with autofit + `--demand`. The demand-supply loop ran its ≤2-round budget: round 1 supplied 4 stories, round 2 supplied 4 more (used markers persisted — no story was ever supplied twice), regenerating plates each round, and supplied stories (e.g. NASA briefs) demonstrably entered the plates. P3/P4 brief deficits persisted (final fill 56% / 54%): fill gains during autofit come from **font-scaling, not content backfill**, and the loop **honestly stopped and reported the unmet demand** instead of claiming convergence. Full convergence requires directed full-article fetching (documented extension point) or accepting the sparse-but-honest layout. Reproduce: `fetch_sources.py` → `build_plates.py` → linotype `--demand` → the loop script in `SKILL.md`.
+
+## Review gate (审料门)
+
+Composing plates is **not mechanical pasting** — before `build_plates.py` runs, a human reviews the collected material once. This is the last line of defense against junk reaching the page (nav text, podcast pages, ICP filing pages, `javascript:;` links, stale archive stories).
+
+1. **Read the manifest** — `$DAILY/sources/p1.md … p4.md` (or `fetch_results.json`): title / byline / topic / date / URL per item.
+2. **Five checks** — drop any item that fails one:
+   - **Title**: a real headline, not nav copy ("Download press kit", an email, `About Us`)
+   - **Attribution**: has a reporter or source name, traceable
+   - **Topic**: matches the section (P1 world/military · P2 ai/tech · P3 space · P4 china-tech)
+   - **Recency**: not a >30-day archive story
+   - **URL legality**: `http(s)`, not a filing page, not `javascript:`/`#`/nav link
+3. **Only then compose** — run `build_plates.py`.
+4. **Supplied backfill passes the gate too** — supply output (`used=True` items) enters plates via cache backfill; re-read `parse_demand.py` output to review what was supplied.
+
+> Automatic front-gates run in code (`fetch_sources.py` URL/title filtering, `build_plates.py` recency/topic/dedup) — the review gate is the human master switch for what they miss.
 
 ## Demand-Supply Contract
 
@@ -146,7 +162,7 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 | `supply.py` | Match demand → stories (rewrite_fn optional) | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
 | `rewrite.py` | LLM compress-only rewrite (Claude API) | `<summary> <min_words> <max_words> [--source X] [--title Y]` |
 | `build_plates.py` | Material → linotype field-format plates | `<fetch_results.json> <out_dir>` (→ plates/p1-p4.md) |
-| `tests/run_tests.py` | Regression suite (20 tests) | `python3 tests/run_tests.py` |
+| `tests/run_tests.py` | Regression suite (38 tests) | `python3 tests/run_tests.py` |
 
 ## Requirements
 
@@ -166,7 +182,7 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 │   ├── supply.py          # Demand-supply matching (rewrite_fn)
 │   ├── rewrite.py         # LLM compress-only rewrite (Claude API)
 │   └── build_plates.py    # Material → linotype plates
-├── tests/                 # Regression suite (20 tests, no pytest needed)
+├── tests/                 # Regression suite (38 tests, no pytest needed)
 └── docs/                  # Design spec & dev history
 ```
 
@@ -176,6 +192,8 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 - **Rewrite engine needs LLM**: `rewrite.py` requires `anthropic` + API key (or Claude CLI); collection/composition work without it
 - **No text-wrap images**: image handling follows Linotype's `\photo` (plate-top / between-element)
 - **Source volatility**: some sources rate-limit (Blue Origin 429, Microsoft 403 transient); failures are logged and skipped, not fatal
+- **Residual scrape junk / topic leaks**: page-scraped nav or general-China politics stories can beat the automatic filters — the review gate is the designed catch; per-source parsing rules and stronger topic signals are the extension points
+- **Brief slots cap at 3/plate**: brief-based supply alone cannot structurally converge a plate past ~3 briefs + 2 mains; larger deficits need a main-story upgrade or directed full-article fetch
 
 ## License
 

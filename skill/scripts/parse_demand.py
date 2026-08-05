@@ -8,6 +8,13 @@ from pathlib import Path
 
 FILL_MIN = 0.45  # 与 linotype autofit 下限一致
 
+# linotype.cls 的全部 Overfull 输出模式（终审 I-1）:
+#   "Overfull plate: content ..."   (:557 整版溢出)
+#   "Overfull main column: ..."     (:364 主栏超高截断)
+#   "Overfull aside column: ..."    (:369 侧栏超高截断)
+#   "Overfull mainstory: ..."       (:408 主条 vsplit 截断)
+_OVERFULL_RE = re.compile(r"Overfull (?:plate: content|main column|aside column|mainstory)")
+
 
 def parse_build_output(stdout: str, log_path: Path | None = None,
                        demand_path: Path | None = None) -> dict:
@@ -24,9 +31,9 @@ def parse_build_output(stdout: str, log_path: Path | None = None,
     log_text = ""
     if log_path and log_path.exists():
         log_text = log_path.read_text(errors="replace")
-    if re.search(r"Overfull plate: content", log_text):
+    if _OVERFULL_RE.search(log_text):
         report["overfull"] = True
-        report["messages"].append("⚠️ 存在 Overfull plate 警告")
+        report["messages"].append("⚠️ 存在 Overfull 警告（plate/main column/aside column/mainstory）")
     for m in re.finditer(r"Plate content: ([\d.]+)pt/ contentH ([\d.]+)pt", log_text):
         c, ch = float(m.group(1)), float(m.group(2))
         if ch > 0: report["fills"].append(c / ch)

@@ -65,6 +65,79 @@ def test_supply_requests_returns_matched():
           "request 引用应为 demand 中的原始 request 对象")
 
 
+def test_match_cache_skips_stale():
+    """终审 I-3：过期素材（date >30 天）不参与供给——成版同样排除，避免供给作废。"""
+    req = {"words": [60, 90], "min_kind": "china-official"}
+    cache = [
+        {"title": "Fresh story", "url": "https://f.com/1", "summary": "word " * 70,
+         "source": "GT", "kind": "china-official",
+         "date": "Wed, 05 Aug 2026 10:00:00 GMT"},
+        {"title": "Archive story", "url": "https://a.com/1", "summary": "word " * 70,
+         "source": "GT", "kind": "china-official",
+         "date": "Mon, 12 Dec 2017 10:00:00 GMT"},
+    ]
+    item = sp.match_cache(req, cache, set())
+    check(item is not None and item["title"] == "Fresh story",
+          f"应跳过 2017 归档稿命中新稿，实际 {item and item['title']!r}")
+    item2 = sp.match_cache(req, [cache[1]], set())
+    check(item2 is None, "只剩归档稿时不应供给")
+
+
+def test_match_cache_filters_off_topic():
+    """终审 I-4：demand 的 topic 端到端生效——明显不相关标题（如 P4 纪念稿）不补稿。"""
+    req = {"words": [60, 90], "min_kind": "china-official", "topic": "china-tech"}
+    cache = [
+        {"title": "Memorial Day a time to remember", "url": "https://m.com/1", "summary": "word " * 70,
+         "source": "China Daily", "kind": "china-official"},
+        {"title": "China launches chip export controls", "url": "https://c.com/1", "summary": "word " * 70,
+         "source": "GT", "kind": "china-official"},
+    ]
+    item = sp.match_cache(req, cache, set())
+    check(item is not None and item["title"] == "China launches chip export controls",
+          f"P4 纪念稿应按 topic 过滤，实际 {item and item['title']!r}")
+    # 只剩纪念稿 → 不供给（宁缺勿滥，诚实报告）
+    item2 = sp.match_cache(req, [cache[0]], set())
+    check(item2 is None, "题材不匹配素材不应兜底供给")
+
+
+def test_supply_marks_used_persistent():
+    """终审 C-1b：供给输出携带 used=True，回写缓存后第 2 轮不重复供给同一批素材。"""
+    demand = {"plates": {"P2": {"requests": [
+        {"type": "brief", "count": 2, "words": [60, 90], "topic": "ai/tech", "min_kind": "company"}]}}}
+    cache = {"P2": [
+        {"title": "One", "url": "https://e.com/1", "summary": "word " * 70, "source": "S", "kind": "company"},
+        {"title": "Two", "url": "https://e.com/2", "summary": "word " * 70, "source": "S", "kind": "company"},
+        {"title": "Three", "url": "https://e.com/3", "summary": "word " * 70, "source": "S", "kind": "company"},
+    ]}
+    # 第 1 轮供给
+    r1 = sp.supply_requests(demand, cache, {}, Path("."))
+    check(all(i.get("used") for i in r1["P2"]), "供给输出每条都应带 used=True")
+    # 回写缓存（SKILL.md 循环的做法）：附加供给结果；原 cache 条目已被 match_cache 原地标记 used
+    for i in r1["P2"]:
+        cache["P2"].append(i)
+    used_urls = {x["url"] for x in cache["P2"] if x.get("used")}
+    # 第 2 轮供给：应匹配到第 3 条（未被 used），而非重复前两条
+    r2 = sp.supply_requests(demand, cache, {}, Path("."))
+    urls2 = [i["url"] for i in r2["P2"]]
+    check(urls2 == ["https://e.com/3"], f"第 2 轮应供给新素材 e.com/3，实际 {urls2}")
+
+
+def test_supply_rewrite_failure_keeps_original():
+    """终审 I-6：rewrite_fn 抛异常 → 保留原素材 + 警告，不中断整轮供给。"""
+    demand = {"plates": {"P2": {"requests": [
+        {"type": "main", "count": 1, "words": [250, 400], "topic": "ai/tech", "min_kind": "company"}]}}}
+    cache = {"P2": [{"title": "Long story", "url": "https://e.com/l", "summary": "word " * 60,
+                     "source": "OpenAI", "kind": "company"}]}
+
+    def bad_rewrite(*a, **k):
+        raise RuntimeError("LLM unavailable")
+
+    results = sp.supply_requests(demand, cache, {}, Path("."), rewrite_fn=bad_rewrite)
+    check(len(results["P2"]) == 1, "改写失败不应丢弃素材")
+    check(results["P2"][0]["summary"].startswith("word"), "改写失败应保留原摘要")
+    check(results["P2"][0].get("used") is True, "改写失败素材仍应标记 used（防重复供给）")
+
+
 def test_match_cache_rewrite_fallback():
     """精确规格匹配失败 → 返回最接近素材 + needs_rewrite（AI 改写压缩）。"""
     req = {"words": [250, 400], "min_kind": "china-official"}
@@ -111,12 +184,16 @@ def main():
     test_supply_requests_returns_matched()
     test_match_cache_rewrite_fallback()
     test_supply_requests_fetch_fn_no_duplicate()
+    test_match_cache_skips_stale()
+    test_match_cache_filters_off_topic()
+    test_supply_marks_used_persistent()
+    test_supply_rewrite_failure_keeps_original()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print("ALL TESTS PASSED (3 tests)")
+    print("ALL TESTS PASSED (8 tests)")
 
 
 if __name__ == "__main__":

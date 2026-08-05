@@ -54,9 +54,9 @@ plates/p1-p4.md ──► linotype build.py --demand（xelatex）
                      out.pdf + demand.json（补稿单）
                           │
                           ▼
-      supply.py ──► rewrite.py（LLM 压缩）──► 回填缓存
+      supply.py ──► rewrite.py（LLM 压缩）──► 回填缓存（used=True）
       │   ▲                                        │
-      └───  迭代 ≤2 轮直到 demand.json 空 ─────────┘
+      └───  迭代 ≤2 轮直到 demand.json 空——或诚实停止 ──┘
 ```
 
 ## 快速上手
@@ -80,7 +80,27 @@ python3 scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $
 #    （完整循环脚本见 SKILL.md）
 ```
 
-首期样报（2026-08-05）：54 信源 → 4 版 → Linotype autofit 收敛，需求-供给闭环验证通过（P1 fill 59→65%+，P4 主条缺口消除 48→55%）。
+首期样报（2026-08-05），**如实表述**：54 信源 → 4 版 → Linotype autofit 排版 + `--demand`。需求-供给闭环跑了 ≤2 轮预算：第 1 轮补稿 4 条、第 2 轮补稿 4 条（used 标记持久化——没有任何素材被供给两次），每轮补稿后重新成版，供给素材（如 NASA 简讯）确实进入版面。但 P3/P4 的简讯缺口仍存在（最终 fill 56% / 54%）：autofit 阶段的 fill 上升来自**字号缩放而非内容回填**，循环**诚实停止并报告未满足需求**，而非宣称收敛。完全收敛需要定向抓取全文（文档化的扩展点）或接受稀疏但诚实的版面。可复现：`fetch_sources.py` → `build_plates.py` → linotype `--demand` → SKILL.md 中的循环脚本。
+
+## 审料门（成版前必过）
+
+**成版不是机械拼贴**——执行 `build_plates.py` 之前，必须人工审阅一次素材。这是垃圾素材
+（导航文本、播客页、ICP 备案页、`javascript:;` 链接、过期归档稿）直达版面的最后防线。
+
+1. **读清单**：打开 `$DAILY/sources/p1.md … p4.md`（或 `fetch_results.json`），逐条过目
+   标题 / 归属（Byline）/ 题材 / 时间 / URL。
+2. **五项检查**，任一不过即淘汰：
+   - **标题**：是新闻标题而非导航文案（"Download press kit"、邮箱、`About Us`）
+   - **归属**：有记者名或站点名，可溯源
+   - **题材**：与版块题材一致（P1 world/military · P2 ai/tech · P3 space · P4 china-tech）
+   - **时效**：不是 >30 天的归档稿
+   - **URL 合法性**：`http(s)`、非备案页、非 `javascript:`/`#`/导航链接
+3. **确认后成版**：审阅通过才执行 `build_plates.py`。
+4. **闭环补稿同样过门**：供给补入的素材（`used=True` 标记）随缓存回写进版；用
+   `parse_demand.py` 复查补稿清单后人工确认。
+
+> 自动前置门在代码里（`fetch_sources.py` 的 URL/标题过滤、`build_plates.py` 的时效/题材/去重）——
+> 审料门是人工总闸，兜自动门漏网之鱼。
 
 ## 需求-供给契约
 
@@ -146,7 +166,7 @@ BRIEFS:
 | `supply.py` | 按需求匹配素材（可选 rewrite_fn） | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
 | `rewrite.py` | LLM 只压缩改写（Claude API） | `<summary> <min_words> <max_words> [--source X] [--title Y]` |
 | `build_plates.py` | 素材 → linotype 字段格式 plates | `<fetch_results.json> <out_dir>`（→ plates/p1-p4.md） |
-| `tests/run_tests.py` | 回归套件（20 项） | `python3 tests/run_tests.py` |
+| `tests/run_tests.py` | 回归套件（38 项） | `python3 tests/run_tests.py` |
 
 ## 依赖
 
@@ -166,7 +186,7 @@ BRIEFS:
 │   ├── supply.py          # 需求-供给匹配（rewrite_fn）
 │   ├── rewrite.py         # LLM 只压缩改写（Claude API）
 │   └── build_plates.py    # 素材 → linotype plates
-├── tests/                 # 回归套件（20 项，无需 pytest）
+├── tests/                 # 回归套件（38 项，无需 pytest）
 └── docs/                  # 设计文档与开发史
 ```
 
@@ -176,6 +196,8 @@ BRIEFS:
 - **改写引擎需 LLM**：`rewrite.py` 需 `anthropic` + API key（或 Claude CLI）；采集/成版不需要
 - **无图文混排**：图片处理沿用 Linotype 的 `\photo`（版顶/版间图）
 - **信源波动**：部分源限流（Blue Origin 429、Microsoft 403 瞬态）；失败记录并跳过，不致命
+- **残余抓取垃圾 / 题材泄漏**：主页抓取的导航文本或综合中国新闻（政治稿）可能绕过自动过滤——审料门是设计上的兜底；逐源解析规则与更强的题材信号是扩展点
+- **简讯槽位上限 3 条/版**：仅靠补简讯无法结构性收敛版面（约 3 简讯 + 2 主条封顶）；更大缺口需要主条升级或定向抓取全文
 
 ## 许可证
 

@@ -93,6 +93,88 @@ def test_write_plates_skips_empty_main_plate():
         check(not (out / "plates" / "p1.md").exists(), "空摘要主条不应生成 plates/p1.md")
 
 
+def test_pick_briefs_prefers_supplied():
+    """终审 C-1c：按单供给（used=True + brief 规格 request）的素材优先入选简讯。"""
+    news = [
+        {"title": "Unsupplied china-official", "url": "https://e.com/u1", "summary": "Short one.", "author": "", "source": "GT", "kind": "china-official"},
+        {"title": "Supplied NASA brief", "url": "https://e.com/s1", "summary": "word " * 70,
+         "author": "", "source": "NASA", "kind": "agency", "used": True,
+         "request": {"type": "brief", "words": [60, 90], "topic": "space"}},
+    ]
+    briefs = bp.pick_briefs(news, set(), 2, plate=3)
+    check(briefs[0]["title"] == "Supplied NASA brief",
+          f"供给素材应优先入选简讯，实际 {[b['title'][:30] for b in briefs]}")
+
+
+def test_pick_main_prefers_supplied_main():
+    """终审 C-1c：按主条规格供给的素材优先入选主条。"""
+    news = [
+        {"title": "Unsupplied short china-official", "url": "https://e.com/m1",
+         "summary": "word " * 40, "author": "", "source": "GT", "kind": "china-official"},
+        {"title": "Supplied main story", "url": "https://e.com/m2", "summary": "word " * 300,
+         "author": "", "source": "Reuters", "kind": "aggregator", "used": True,
+         "request": {"type": "main", "words": [250, 400], "topic": "space"}},
+    ]
+    mains = bp.pick_main_stories(news, 2, plate=3)
+    check(mains[0]["title"] == "Supplied main story",
+          f"按主条规格供给的素材应优先，实际 {[m['title'][:30] for m in mains]}")
+    # 简讯规格供给（target <200）不应抢占主条
+    news2 = [
+        {"title": "Long unsupplied", "url": "https://e.com/m3", "summary": "word " * 300,
+         "author": "", "source": "GT", "kind": "china-official"},
+        {"title": "Supplied brief", "url": "https://e.com/m4", "summary": "word " * 70,
+         "author": "", "source": "NASA", "kind": "agency", "used": True,
+         "request": {"type": "brief", "words": [60, 90], "topic": "space"}},
+    ]
+    mains2 = bp.pick_main_stories(news2, 1, plate=3)
+    check(mains2[0]["title"] == "Long unsupplied",
+          f"供给的简讯不应抢占主条，实际 {mains2[0]['title']!r}")
+
+
+def test_dedup_same_url_and_title():
+    """终审 I-2：同 URL / 同标题素材在选材时只入选一次。"""
+    news = [
+        {"title": "Story A", "url": "https://e.com/dup", "summary": "Short a.", "author": "", "source": "S1", "kind": "agency"},
+        {"title": "Story A", "url": "https://e.com/other", "summary": "Short b.", "author": "", "source": "S2", "kind": "agency"},
+        {"title": "Story B", "url": "https://e.com/2", "summary": "Short c.", "author": "", "source": "S3", "kind": "agency"},
+    ]
+    briefs = bp.pick_briefs(news, set(), 3, plate=3)
+    titles = [b["title"] for b in briefs]
+    check(titles == ["Story A", "Story B"], f"重复标题/URL 只应入选一次：{titles}")
+
+
+def test_recency_filters_stale():
+    """终审 I-3：date 过期（>30 天）素材排除；无 date 素材保留（RSS 通常有日期）。"""
+    news = [
+        {"title": "Archive 2017", "url": "https://e.com/old", "summary": "word " * 300,
+         "author": "", "source": "China Daily", "kind": "china-official",
+         "date": "Mon, 12 Dec 2017 10:00:00 GMT"},
+        {"title": "Fresh story", "url": "https://e.com/new", "summary": "word " * 300,
+         "author": "", "source": "NASA", "kind": "agency",
+         "date": "Tue, 04 Aug 2026 20:00:14 GMT"},
+        {"title": "No date story", "url": "https://e.com/nodate", "summary": "word " * 300,
+         "author": "", "source": "GT", "kind": "china-official", "date": ""},
+    ]
+    mains = bp.pick_main_stories(news, 3, plate=3)
+    titles = [m["title"] for m in mains]
+    check("Archive 2017" not in titles, f"2017 归档稿应被排除：{titles}")
+    check("Fresh story" in titles and "No date story" in titles,
+          f"新稿与无日期稿应保留：{titles}")
+
+
+def test_topic_penalty_deprioritizes_off_topic():
+    """终审 I-4：标题明显与版块题材不相关（如 P4 纪念稿）→ 降权到题材匹配素材之后。"""
+    news = [
+        {"title": "Memorial Day a time to remember", "url": "https://e.com/t1", "summary": "word " * 300,
+         "author": "", "source": "China Daily", "kind": "china-official"},
+        {"title": "China launches chip export controls", "url": "https://e.com/t2", "summary": "word " * 300,
+         "author": "", "source": "GT", "kind": "china-official"},
+    ]
+    mains = bp.pick_main_stories(news, 2, plate=4)
+    check(mains[0]["title"] == "China launches chip export controls",
+          f"P4 纪念稿应降权：{mains[0]['title']!r}")
+
+
 def test_pick_main_stories_filters_non_english():
     """非英文素材（西里尔/保加利亚语等）不入选主条——英文日报定位。"""
     news = [
@@ -117,12 +199,17 @@ def main():
     test_pick_main_stories_skips_empty_summary()
     test_write_plates_skips_empty_main_plate()
     test_pick_main_stories_filters_non_english()
+    test_pick_briefs_prefers_supplied()
+    test_pick_main_prefers_supplied_main()
+    test_dedup_same_url_and_title()
+    test_recency_filters_stale()
+    test_topic_penalty_deprioritizes_off_topic()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({8} tests)")
+    print(f"ALL TESTS PASSED ({13} tests)")
 
 
 if __name__ == "__main__":

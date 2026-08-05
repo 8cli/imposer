@@ -8,6 +8,8 @@
 import argparse, json, re, sys
 from pathlib import Path
 
+from build_plates import TOPIC_TO_PLATE, _topic_penalty, is_stale  # 终审 I-3/I-4（与成版同标准）
+
 _LATIN_RE = re.compile(r"[A-Za-z]")
 
 
@@ -34,11 +36,17 @@ def match_cache(request: dict, cache: list[dict], used_urls: set,
     min_kind_rank = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
                      "china-ai": 4, "independent": 5, "tech-media": 6, "aggregator": 7,
                      "western": 8}
+    # 题材过滤（终审 I-4）：demand 的 topic → 版号 → 负向关键词；明显不相关不补稿
+    plate = TOPIC_TO_PLATE.get(request.get("topic", ""), 1)
     best_fallback = None
     best_dist = None
     for item in cache:
         if item["url"] in used_urls:
             continue
+        if is_stale(item):
+            continue  # 过期素材（date 存在且 >30 天）不补稿——成版也会排除
+        if _topic_penalty(item.get("title", ""), plate):
+            continue  # 题材明显不匹配（如 P4 的纪念稿）不补稿
         if not _is_english(item.get("title", "") + " " + item.get("summary", "")):
             continue  # 非英文素材不补稿
         kind_ok = min_kind_rank.get(item["kind"], 9) <= min_kind_rank.get(request["min_kind"], 9)
@@ -69,6 +77,10 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
     （rewrite.py，LLM 压缩）改写压缩到目标词数区间。rewrite_fn 签名:
         rewrite_fn(summary, min_words, max_words, source, title) -> str
     铁律：只压缩不扩写——素材词数 ≤ 需求上限时原样返回（不调用 LLM）。
+
+    每供给一条：素材原地标记 used=True 并挂 request（终审 C-1b/C-1c）——编排层
+    回写缓存后第 2 轮不再重复供给；build_plates 按 request 槽位优先入选。
+    rewrite_fn 失败逐条容错（终审 I-6）：保留原素材 + 警告，不中断整轮。
     """
     results = {}
     for plate, info in demand.get("plates", {}).items():
@@ -84,12 +96,17 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
                         item = None
                 if item:
                     used.add(item["url"])  # fetch 素材也记 used，防重复供给
+                    item["used"] = True    # 持久化标记：编排层回写缓存后，第 2 轮不再重复供给（终审 C-1b）
+                    item["request"] = req  # 原条目也挂 request：成版 _dedup 保留原条目时槽位优先不丢失（终审 C-1c）
                     # LLM 改写压缩（铁律: 只压缩不扩写，由 rewrite_fn 内部保证）
                     if item.get("needs_rewrite") and rewrite_fn:
                         lo, hi = req["words"]
-                        item["summary"] = rewrite_fn(
-                            item.get("summary", ""), lo, hi,
-                            item.get("source", ""), item.get("title", ""))
+                        try:  # 改写失败保留原素材 + 警告（对比 fetch 的逐源容错，终审 I-6）
+                            item["summary"] = rewrite_fn(
+                                item.get("summary", ""), lo, hi,
+                                item.get("source", ""), item.get("title", ""))
+                        except Exception as e:
+                            print(f"  ⚠️ 改写失败（{e}），保留原素材（宁缺勿滥）")
                         item.pop("needs_rewrite", None)
                         item.pop("target_words", None)
                     supplied.append({**item, "request": req})

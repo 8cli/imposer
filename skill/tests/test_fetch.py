@@ -124,6 +124,49 @@ def test_fetch_page_fallback():
         fs.http_get = orig
 
 
+def test_article_url_filter():
+    """审料门前置（终审 I-5）：javascript:/备案页/导航路径/邮件标题被排除，文章链接保留。"""
+    check(fs.is_article_url("https://www.globaltimes.cn/page/202608/1.shtml"),
+          "文章链接应通过")
+    check(not fs.is_article_url("javascript:;"), "javascript:; 空链接应排除")
+    check(not fs.is_article_url("mailto:press@x.com"), "mailto 应排除")
+    check(not fs.is_article_url("https://beian.miit.gov.cn/"), "ICP 备案页应排除")
+    check(not fs.is_article_url("https://www.rand.org/podcast/audio.html"), "podcast 导航应排除")
+    check(not fs.is_article_url("https://site.example/about"), "/about 导航应排除")
+    check(not fs.is_article_url("https://site.example/tag/china"), "/tag/ 列表页应排除")
+    # 标题垃圾：邮箱样标题 / 导航文案
+    check(fs.is_junk_title("press@anthropic.com"), "邮箱样标题应排除")
+    check(fs.is_junk_title("Download press kit"), "导航文案标题应排除")
+    check(not fs.is_junk_title("China launches first national security investigation"), "正常标题应保留")
+    # 摘要段落垃圾：图片说明 / stub 填充
+    check(fs.is_junk_paragraph("The Ministry of Commerce of China File photo: VCG"), "File photo 段落应剔除")
+    check(fs.is_junk_paragraph("Additional context from Global Times report."), "Additional context 段落应剔除")
+    check(not fs.is_junk_paragraph("China and Russia kicked off their second joint anti-missile drill on Monday."),
+          "正常正文段应保留")
+
+
+def test_fetch_rss_dedup_same_title():
+    """终审 I-2：同标题（不同 URL）只保留首个，避免同一报道重复进版。"""
+    xml = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item><title>Duplicate Story</title><link>https://example.com/a</link>
+    <description>First.</description><pubDate>Tue, 04 Aug 2026 10:00:00 GMT</pubDate></item>
+  <item><title>Duplicate Story</title><link>https://example.com/b</link>
+    <description>Second.</description><pubDate>Tue, 04 Aug 2026 11:00:00 GMT</pubDate></item>
+  <item><title>Unique Story</title><link>https://example.com/c</link>
+    <description>Third.</description></item>
+</channel></rss>"""
+    orig = fs.http_get
+    fs.http_get = lambda url: xml
+    try:
+        items = fs.fetch_rss({"url": "https://example.com/rss", "name": "DedupTest"})
+        check(len(items) == 2, f"同标题重复应去重：期望 2 条，实际 {len(items)}")
+        check(items[0]["url"] == "https://example.com/a", "应保留首个 URL")
+        check(items[1]["title"] == "Unique Story", f"第二条应为 Unique Story：{items}")
+    finally:
+        fs.http_get = orig
+
+
 def test_fetch_all_writes_archive_and_json():
     with tempfile.TemporaryDirectory() as td:
         out = Path(td)
@@ -153,13 +196,15 @@ def main():
     test_fetch_rss_bad_entities()
     test_strip_tags()
     test_fetch_page_fallback()
+    test_article_url_filter()
+    test_fetch_rss_dedup_same_title()
     test_fetch_all_writes_archive_and_json()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({6} tests)")
+    print(f"ALL TESTS PASSED ({8} tests)")
 
 
 if __name__ == "__main__":
