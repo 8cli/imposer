@@ -178,25 +178,57 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 
 **已排除**：BBC / NYT / Kyiv Independent（对华不友好）；AP 降级为备用（无 RSS，主页抓取不稳定）；中国军网（海外访问超时 000）。
 
-## 四、与 linotype 的信号协议（灵魂）
+## 四、与 linotype 的需求-供给契约（灵魂）
 
-imposer 读取 linotype 吐出的每一个信号并响应：
+imposer 与 linotype 是**需求方-供给方**关系（版面编辑 ↔ 文稿台）：
+**linotype 缺内容时下"补稿单"（demand.json），imposer 按规格找稿交稿**——比单向信号更精确、更良性。
+
+### linotype 侧：发出需求信号（build.py 增强，`--demand` 输出）
+
+autofit 收敛后，linotype build.py 分析每版 fill，输出 `demand.json`：
+
+```json
+{
+  "P3": {
+    "fill": 0.31,
+    "deficit_pt": 104.2,
+    "requests": [
+      {"type": "brief",     "count": 2, "words": [60, 90],   "topic": "space", "min_kind": "agency"},
+      {"type": "deep_dive", "count": 1, "words": [400, 600], "topic": "space", "min_kind": "thinktank"}
+    ]
+  }
+}
+```
+
+- `deficit_pt = (FILL_MIN − fill) × contentH`——缺多少 pt 内容
+- 需求类型按缺口估算：`<100pt → briefs`；`100–300pt → 1 main + briefs`；`>300pt → deep_dive + main + briefs`
+- `topic` 由版块映射（P1 world/military, P2 ai/tech, P3 space, P4 china-tech）；`min_kind` 按版块主信源层级
+- **向后兼容**：`--demand` 是新增可选输出，不影响既有 autofit/排版行为（linotype 25 项回归必须保持全绿）
+
+### imposer 侧：供给模块（supply.py）
+
+```
+读 demand.json → 素材缓存匹配（topic × words × min_kind）
+  → 缓存不足 → 定向抓取该版块信源
+  → 按规格生成补稿 → 更新 plates → 重排
+  → 需求收敛（0 请求 且 0 Overfull）或 2 轮上限
+```
+
+### 其余信号响应（保留）
 
 | linotype 信号 | 含义 | imposer 响应 |
 |---|---|---|
-| `Plate content: X/Y`（typeout） | 版填充率 | fill < 45% → 增补简讯 / 扩写段落 |
 | `Overfull plate: content X>Y`（typeout） | 溢出 | 裁段（末段起）→ 换次条 → 减简讯 |
 | autofit 收敛成功 | 版面 OK | 进入 QA |
 | autofit 失败（历史最佳报告） | 边界内放不下 | 接受 + 报告用户人工决策 |
 | `--visual` 像素诊断（空白带） | 视觉稀疏 | 调配比 / 建议加图 |
 
-**响应机制（反馈环，≤2 轮防死循环）**：
+**反馈环（≤2 轮防死循环）**：
 
 ```
-成版 → linotype 排版（autofit 默认开）
-  → 解析 build.py 输出 + .log（Plate content / Overfull / autofit 报告）
-  → 版面健康报告（每版 fill + overfull 状态）
-  → 不达标？按上表自动调整 plates/*.md → 重排（第 2 轮）
+成版 → linotype 排版（--demand 输出 demand.json）
+  → 版面健康报告（fill / overfull / requests）
+  → 有 requests？supply 按单补稿 → 重排（第 2 轮）
   → 仍不达标？停止 + 诚实报告给用户
 ```
 
@@ -232,8 +264,9 @@ imposer 读取 linotype 吐出的每一个信号并响应：
 ├── SKILL.md                          # imposer 手册（编排者模式，linotype 知识内嵌）
 ├── scripts/
 │   ├── fetch_sources.py              # RSS 拉取 + 主页抓取（多信源并行）
-│   ├── build_plates.py               # 素材 → plates/p1-p4.md（字段格式 + 归属）
-│   └── parse_signals.py              # .log/build.py 输出 → 版面健康报告（结构化）
+│   ├── parse_demand.py               # 读 demand.json + .log → 版面健康报告 + 需求清单
+│   ├── supply.py                     # 需求-供给匹配：按单找稿/定向抓取/补稿
+│   └── build_plates.py               # 素材 → plates/p1-p4.md（字段格式 + 归属）
 └── tests/
     ├── run_tests.py                  # 测试矩阵（仿 linotype 25 项结构）
     └── scenarios.md                  # 压力场景
@@ -262,9 +295,13 @@ imposer 读取 linotype 吐出的每一个信号并响应：
 ## 九、实现顺序（供 writing-plans 消费）
 
 1. `fetch_sources.py`：RSS 解析 + 主页抓取 + 信源清单配置
-2. `parse_signals.py`：版面健康报告
-3. `build_plates.py`：素材 → plates（字段 + 归属 + 中长篇/简讯配比）
-4. SKILL.md：编排者手册（linotype 调用 + 信号响应规则）
-5. 测试矩阵 + 场景
+2. **linotype build.py `--demand` 输出**（跨 skill 协议改造，向后兼容）
+3. `parse_demand.py`：版面健康报告 + 需求清单解析
+4. `supply.py`：需求-供给匹配（按单找稿 / 定向抓取 / 补稿）
+5. `build_plates.py`：素材 → plates（字段 + 归属 + 中长篇/简讯配比）
+6. SKILL.md：编排者手册（linotype 调用 + 需求-供给规则）
+7. 测试矩阵 + 场景
+8. 端到端试跑（真实信源出第一期样报）
+9. 交付物归档 + 工作日志
 6. 端到端试跑（真实信源出第一期样报）
 7. 交付物归档 + 工作日志
