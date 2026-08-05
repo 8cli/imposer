@@ -1,0 +1,182 @@
+<div align="center">
+
+# 📰 Imposer
+
+**The compositor for Linotype — a demand-driven English daily newspaper orchestrator**
+
+Turn authoritative China-friendly news sources into print-quality English daily newspapers, powered by a **demand-supply contract** with the Linotype typesetting engine.
+
+`fetch → build_plates → linotype --demand → supply (LLM rewrite) → converge`
+
+[Quick Start](#quick-start) · [Demand-Supply Contract](#demand-supply-contract) · [Content Format](#content-format) · [Sources](#sources) · [CLI Reference](#cli-reference) · [中文 README](README.zh-CN.md)
+
+</div>
+
+---
+
+## What is Imposer?
+
+Imposer is the **compositor** (拼版工) for the Linotype typesetting engine. In hot-metal printing, the compositor arranges Linotype-cast lines into pages, reads the proofs, and adjusts the layout. Imposer does exactly that in software:
+
+1. **Collects** source material from authoritative China-friendly news sources (RSS + page scraping, concurrent)
+2. **Composes** it into Linotype's `plates/*.md` field format (main stories + briefs, with reporter/source attribution)
+3. **Reads Linotype's demand signals** — when a plate is underfilled, Linotype emits a `demand.json` "order sheet" (fill %, deficit, requested story specs)
+4. **Supplies matching stories** by spec (topic × word-count × source-rank), using **LLM compression** to fit tight columns (compress-only, never expand)
+5. **Iterates** until Linotype reports the page is filled — or honestly reports it cannot be filled within bounds
+
+Its core differentiator is the **demand-supply contract**: Linotype is the demand side (it says exactly what it needs), Imposer is the supply side (it finds or rewrites to spec). This is more precise than one-way signals — the engine tells you precisely what to fill.
+
+## Features
+
+- **Demand-supply contract** — Linotype emits `demand.json` (per-plate fill %, deficit in pt, requested stories by type/words/source-rank); Imposer supplies exactly what's requested
+- **LLM compression (compress-only)** — when a cached story is longer than the column allows, Imposer compresses it with Claude API to the target word range. **Never expands**: short material is used as-is (no fact fabrication)
+- **Compress-only iron rule** — short stories (≤ word cap) are returned verbatim; only over-length stories are compressed. Quality over forced filling
+- **Concurrent source collection** — 55+ sources across 4 sections fetched in parallel (~28s), RSS-first with page-scraping fallback
+- **English-only filter** — rejects non-Latin material (Cyrillic, Bulgarian, language-switcher links) to preserve the English-daily positioning
+- **Serious-newspaper standard** — configurable `fill_min` threshold (default 0.45, serious standard 0.65): underfilled plates trigger order sheets instead of accepting sparse pages
+- **Full attribution** — every story keeps reporter name + source (`By John Smith · Reuters`; no byline → `By {source} News Desk`); briefs carry source at the end
+- **China-friendly editorial stance** — Chinese official media (GT/Xinhua/CGTN/China Daily) are primary sources; Western media supplement only
+- **Honest failure** — no demand can be met → stops and reports (never fabricates content)
+- **Zero heavy deps** — collection/composition use only Python stdlib; only the rewrite engine needs the `anthropic` package
+
+## Architecture
+
+```
+news sources (55+, 4 sections)
+      │  fetch_sources.py (concurrent RSS + page)
+      ▼
+fetch_results.json  +  sources/pN.md archive
+      │  build_plates.py (field format + attribution)
+      ▼
+plates/p1-p4.md  ──►  linotype build.py --demand (xelatex)
+                          │
+                          ▼
+                     out.pdf + demand.json (order sheet)
+                          │
+                          ▼
+      supply.py ──► rewrite.py (LLM compress) ──► backfill cache
+      │   ▲                                        │
+      └───  iterate ≤2 rounds until demand.json empty ──┘
+```
+
+## Quick Start
+
+```bash
+# 1. Collect sources (4 sections in parallel, ~28s)
+DAILY=~/news/daily/$(date +%F); mkdir -p $DAILY/sources $DAILY/plates
+python3 scripts/fetch_sources.py scripts/sources.json $DAILY
+
+# 2. Compose plates (review material first — see "review gate")
+python3 scripts/build_plates.py $DAILY/fetch_results.json $DAILY
+
+# 3. Typeset with Linotype (run in engine dir; fill_min=0.65 serious standard)
+cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
+  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --demand && cd -
+
+# 4. Read the order sheet
+python3 scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
+
+# 5. Supply loop: match + LLM-compress + backfill + re-typeset (≤2 rounds)
+#    (full loop script in SKILL.md)
+```
+
+The first daily edition (2026-08-05): 54 sources → 4 plates → Linotype autofit converged, demand-supply closed loop verified (P1 filled 59→65%+, P4 main-story deficit eliminated 48→55%).
+
+## Demand-Supply Contract
+
+Linotype emits `demand.json` when a plate is underfilled (`--demand` + `fill_min`):
+
+```json
+{"plates": {"P3": {"fill": 0.31, "deficit_pt": 104.2, "requests": [
+  {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}}
+```
+
+| Field | Meaning |
+|---|---|
+| `fill` | plate utilization (content height / viewport height) |
+| `deficit_pt` | how many pt of content are missing to reach `fill_min` |
+| `requests[].type` | `brief` (<100pt deficit) · `main` (100-300pt) · `deep_dive` (>300pt, think-tank) |
+| `requests[].words` | target word range (e.g. [60, 90] for a brief) |
+| `requests[].min_kind` | minimum source rank (China-friendly priority) |
+| `requests[].topic` | plate topic (P1 world/military · P2 ai/tech · P3 space · P4 china-tech) |
+
+Imposer's `supply.py` matches cached material by `topic × words × min_kind`; if a longer-than-cap story is closest, `rewrite.py` compresses it via Claude API to the target range (compress-only). Backfill → re-typeset → read demand again, **≤2 rounds** to avoid infinite loops.
+
+## Content Format
+
+Each plate is a `plates/pN.md` with Linotype field labels:
+
+```markdown
+LAYOUT: main-aside        # P1 uses main-aside (main 2-col + aside 1-col)
+COLUMNS: 3                # P2/P3/P4 equal columns
+KICKER: WORLD & DIPLOMACY # P1 · AI & TECH (P2) · SPACE EXPLORATION (P3) · CHINA TECH (P4)
+HEADLINE: Main story title
+DECK: Standfirst
+BYLINE: By John Smith · Reuters   # attribution iron rule
+BODY:
+Paragraph one...
+Paragraph two...
+STORY-B: Secondary story
+Sub-paragraph...
+BRIEFS:
+**Brief title:** Brief content — Reuters.
+```
+
+Special characters are escaped by Linotype's `build.py` (Imposer writes raw text — no double-escaping). Full field reference in Linotype's README.
+
+## Sources
+
+**China-friendly editorial stance**: Chinese official media are primary; Western media supplement only; think-tanks provide one deep-dive per issue.
+
+| Section | Primary (china-official) | Supplement |
+|---|---|---|
+| P1 World & Military | Global Times, Xinhua, CGTN | Al Jazeera, TASS, Asia Times, AMR, Naval News, DefenceTalk, WaPo/NYT/VOA/ABC (western supplement), CSIS/Brookings/RAND/CFR (think-tank) |
+| P2 AI & Tech | Moonshot, Z.ai, DeepSeek, Alibaba | Google, OpenAI, Anthropic, NVIDIA, xAI, Cloudflare, MS, GitHub, Amazon, Yahoo/AOL, MIT/Ars |
+| P3 Space | CNSA, Xinhua Space | NASA, ESA, JAXA, ISRO, SpaceX, Rocket Lab, SpaceNews, Space.com, NASA Spaceflight, Universe Today |
+| P4 China Tech | China Daily, Global Times, Xinhua | SCMP |
+
+All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/remove sources.
+
+## CLI Reference
+
+| Script | Purpose | Key args |
+|---|---|---|
+| `fetch_sources.py` | Concurrent RSS+page collection | `<sources.json> <out_dir>` (→ fetch_results.json + sources/pN.md) |
+| `parse_demand.py` | Read build output + demand.json → health report | `<build.log> [--log x.log] [--demand demand.json]` |
+| `supply.py` | Match demand → stories (rewrite_fn optional) | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
+| `rewrite.py` | LLM compress-only rewrite (Claude API) | `<summary> <min_words> <max_words> [--source X] [--title Y]` |
+| `build_plates.py` | Material → linotype field-format plates | `<fetch_results.json> <out_dir>` (→ plates/p1-p4.md) |
+| `tests/run_tests.py` | Regression suite (20 tests) | `python3 tests/run_tests.py` |
+
+## Requirements
+
+- **Linotype** (`~/news/latex` or the [linotype repo](https://github.com/8cli/linotype)) — the typesetting engine, with `--demand` support (build.py ≥ 2026-08-05)
+- **Python 3.10+** (stdlib for collection/composition)
+- **anthropic** package + `ANTHROPIC_API_KEY` (for `rewrite.py` LLM compression; falls back to Claude CLI)
+- **xelatex** (TeX Live) — via Linotype
+
+## Project Layout
+
+```
+├── SKILL.md               # Orchestration manual (agent-facing)
+├── scripts/
+│   ├── sources.json       # 55+ verified sources (P1-P4)
+│   ├── fetch_sources.py   # Concurrent RSS+page collection
+│   ├── parse_demand.py    # Linotype demand → health report
+│   ├── supply.py          # Demand-supply matching (rewrite_fn)
+│   ├── rewrite.py         # LLM compress-only rewrite (Claude API)
+│   └── build_plates.py    # Material → linotype plates
+├── tests/                 # Regression suite (20 tests, no pytest needed)
+└── docs/                  # Design spec & dev history
+```
+
+## Known Limitations (accepted)
+
+- **Compress-only**: material shorter than the word cap is used as-is (never expanded) — underfilled plates may persist if the cache lacks sufficient material; directed fetching of full articles is the natural next step
+- **Rewrite engine needs LLM**: `rewrite.py` requires `anthropic` + API key (or Claude CLI); collection/composition work without it
+- **No text-wrap images**: image handling follows Linotype's `\photo` (plate-top / between-element)
+- **Source volatility**: some sources rate-limit (Blue Origin 429, Microsoft 403 transient); failures are logged and skipped, not fatal
+
+## License
+
+[MIT](LICENSE) © 2026 Yu (8cli)
