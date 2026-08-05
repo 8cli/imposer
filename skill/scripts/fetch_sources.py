@@ -16,7 +16,8 @@ from html import unescape
 from pathlib import Path
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
-TIMEOUT = 15
+TIMEOUT = 8
+SUMMARY_TOP_N = 2   # fetch_page 只对前 N 条候选抓首段摘要（控请求数，防整轮超时）
 
 
 def http_get(url: str) -> str:
@@ -105,8 +106,35 @@ def fetch_rss(source: dict, max_items: int = 8) -> list[dict]:
     return items
 
 
+def _fetch_summary(url: str, max_chars: int = 400) -> str:
+    """抓取文章页首段文本作摘要（限时兜底：失败/超时返回空串）。
+
+    新闻页常见结构：<p> 首段即导语。取前 max_chars 字符、按句截断。
+    """
+    try:
+        html = http_get(url)
+    except Exception:
+        return ""
+    # 优先 <p> 段落文本（跳过 script/style/nav/footer）
+    paras = []
+    for m in re.finditer(r"<p[^>]*>(.*?)</p>", html, flags=re.S):
+        text = strip_tags(m.group(1))
+        if text and len(text) > 40:
+            paras.append(text)
+    if not paras:
+        return ""
+    first = paras[0]
+    # 按句截断到 max_chars
+    truncated = first[:max_chars]
+    last_period = truncated.rfind(".")
+    if last_period > max_chars * 0.5:
+        truncated = truncated[: last_period + 1]
+    return truncated
+
+
 def fetch_page(source: dict, max_items: int = 8) -> list[dict]:
-    """主页抓取：优先 h2/h3 内嵌链接；无此结构的站点（如 globaltimes.cn）兜底到一般锚文本。"""
+    """主页抓取：优先 h2/h3 内嵌链接；无此结构的站点（如 globaltimes.cn）兜底到一般锚文本。
+    每条候选顺带抓正文首段作摘要（_fetch_summary），避免空摘要素材无法成版。"""
     try:
         html = http_get(source["url"])
     except Exception as e:
@@ -132,33 +160,54 @@ def fetch_page(source: dict, max_items: int = 8) -> list[dict]:
                 seen_titles.add(title)
             if len(candidates) >= max_items:
                 break
-    # 去重（同标题保留首个），限数量
+    # 去重（同标题保留首个），限数量；只对前 SUMMARY_TOP_N 条抓首段摘要（控请求数防慢）
     seen, out = set(), []
     for c in candidates:
         if c["title"] not in seen:
             seen.add(c["title"])
+            if len(out) < SUMMARY_TOP_N:
+                c["summary"] = _fetch_summary(c["url"])
             out.append(c)
         if len(out) >= max_items:
             break
     return out
 
 
-def fetch_all(sources: dict, out_dir: Path) -> dict:
-    """抓取所有版块信源 → 返回 {plate: [news]} 并写归档 + fetch_results.json。"""
+def fetch_all(sources: dict, out_dir: Path, max_workers: int = 8) -> dict:
+    """抓取所有版块信源（并发）→ 返回 {plate: [news]} 并写归档 + fetch_results.json。
+
+    max_workers=8 并发拉 RSS/主页，总耗时 ≈ 最坏单源耗时（而非串行累加）。
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "sources").mkdir(parents=True, exist_ok=True)
-    results = {}
-    for plate, srcs in sources.items():
-        plate_news = []
-        for src in srcs:
+
+    # 摊平 (plate, src) 任务，并发抓取
+    tasks = [(plate, src) for plate, srcs in sources.items() for src in srcs]
+    fetched: dict[tuple, list] = {}
+
+    def run(plate: str, src: dict) -> tuple:
+        try:
             news = fetch_rss(src) if src["mode"] == "rss" else fetch_page(src)
             for n in news:
                 n["plate"] = plate
                 n["source"] = src["name"]
                 n["kind"] = src["kind"]
-            plate_news.extend(news)
-        results[plate] = plate_news
-        # 写信源归档
+            return plate, news
+        except Exception as e:
+            print(f"  ⚠️ {src['name']} 抓取异常: {e}")
+            return plate, []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        futures = {ex.submit(run, plate, src): plate for plate, src in tasks}
+        for fut in as_completed(futures):
+            plate, news = fut.result()
+            fetched.setdefault(plate, []).extend(news)
+
+    results = {plate: fetched.get(plate, []) for plate in sources}
+    # 写信源归档（每版一个 md）
+    for plate, plate_news in results.items():
         with open(out_dir / "sources" / f"{plate.lower()}.md", "w", encoding="utf-8") as f:
             f.write(f"# {plate} 信源归档\n\n")
             for n in plate_news:

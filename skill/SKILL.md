@@ -24,8 +24,9 @@ python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
 # 3. 组织成版（需人工审查素材后执行——见"审料门"）
 python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 # 4. 调 linotype 排版（autofit 默认开 + --demand 输出补稿单）
-python3 ~/news/latex/build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2" --visual --demand > $DAILY/build.log 2>&1
+#    注意: linotype build.py 需在引擎目录运行（cwd 须含 linotype.cls）
+cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
+  --docopts "paper=a3,landscape,columns=3,plates=2" --visual --demand > $DAILY/build.log 2>&1 && cd -
 # 5. 读需求 → 版面健康报告 + 补稿单
 python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
 # 6. 有需求？按单补稿（supply 匹配缓存/定向抓取）→ 重排（≤2 轮）

@@ -93,6 +93,21 @@ def test_write_plates_skips_empty_main_plate():
         check(not (out / "plates" / "p1.md").exists(), "空摘要主条不应生成 plates/p1.md")
 
 
+def test_pick_main_stories_filters_non_english():
+    """非英文素材（西里尔/保加利亚语等）不入选主条——英文日报定位。"""
+    news = [
+        {"title": "Швейцарската банка UBS коригира", "url": "https://e.com/bg1",
+         "summary": "Швейцарската банка UBS коригира в посока нагоре прогнозата си за Хонконг",
+         "author": "", "source": "TASS", "kind": "independent"},
+        {"title": "China launches probe mission", "url": "https://e.com/en1",
+         "summary": "China launched a new probe mission on Tuesday to study the lunar south pole.",
+         "author": "", "source": "Global Times", "kind": "china-official"},
+    ]
+    mains = bp.pick_main_stories(news, 2)
+    check(len(mains) == 1 and mains[0]["title"].startswith("China"),
+          f"非英文素材未被过滤: {[m['title'][:30] for m in mains]}")
+
+
 def main():
     test_pick_main_stories_prefers_china()
     test_byline_with_and_without_author()
@@ -101,12 +116,13 @@ def main():
     test_write_plates_outputs_files()
     test_pick_main_stories_skips_empty_summary()
     test_write_plates_skips_empty_main_plate()
+    test_pick_main_stories_filters_non_english()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({7} tests)")
+    print(f"ALL TESTS PASSED ({8} tests)")
 
 
 if __name__ == "__main__":
