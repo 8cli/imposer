@@ -15,7 +15,7 @@ def main():
         if r.returncode != 0 and "pytest" in r.stderr.lower() and "No module" in r.stderr:
             # 无 pytest 兜底: 直接 import 跑 assert
             r = subprocess.run([sys.executable, str(HERE / t)], capture_output=True, text=True)
-        print(r.stdout[-300:] if r.returncode == 0 else r.stderr[-300:])
+        print(r.stdout[-300:] + r.stderr[-300:])
         if r.returncode != 0:
             fails += 1
     print(f"\n{'✅ 全部通过' if fails == 0 else f'❌ {fails} 个测试文件失败'}")
