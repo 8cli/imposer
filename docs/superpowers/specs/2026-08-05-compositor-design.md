@@ -94,11 +94,34 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 
 ### P3 太空探索
 
+**官方航天机构（一手权威）：**
+
+| 信源 | 方式 | URL（已验证可达） |
+|---|---|---|
+| NASA（美国宇航局） | RSS + 新闻页 | `nasa.gov/rss/dyn/breaking_news.rss` + `nasa.gov/news/` |
+| ESA（欧洲航天局） | 主页/多媒体抓取 | `esa.int` + `esa.int/ESA_Multimedia`（News RSS 404，用抓取） |
+| CNSA（中国国家航天局英文） | 主页抓取 | `cnsa.gov.cn/english/`（http 可达，https 超时） |
+| JAXA（日本宇宙机构） | 主页抓取 | `global.jaxa.jp` |
+| ISRO（印度航天机构） | 主页抓取 | `isro.gov.in` |
+
+**商业航天公司：**
+
 | 信源 | 方式 | URL |
 |---|---|---|
-| Xinhua 航天 / China Daily Sci | RSS/主页 | `news.cn/english/` |
+| SpaceX | 主页抓取 | `spacex.com` |
+| Rocket Lab | 主页抓取 | `rocketlabusa.com` |
+| Blue Origin | 主页抓取（限流 429，抓取降级） | `blueorigin.com` |
+
+**专业媒体与专业组织：**
+
+| 信源 | 方式 | URL |
+|---|---|---|
 | SpaceNews | RSS | `spacenews.com/feed/` |
 | Space.com | RSS | `space.com/feeds/all` |
+| NASA Spaceflight | RSS | `nasaspaceflight.com/feed/` |
+| Universe Today | RSS | `universetoday.com/feed/` |
+| Planetary Society | 主页抓取 | `planetary.org` |
+| Xinhua 航天 / China Daily Sci | RSS/主页 | `news.cn/english/` |
 
 ### P4 中国科技突破
 
