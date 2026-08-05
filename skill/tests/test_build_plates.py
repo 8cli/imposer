@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "scripts"))
 import build_plates as bp
 
 NEWS = [
-    {"title": "Main China Story", "url": "https://e.com/1", "summary": "Para one. Para two. Para three. Para four. Para five.", "author": "A", "source": "Global Times", "kind": "china-official"},
+    {"title": "Main China Story: 5% Growth & Trade", "url": "https://e.com/1", "summary": "Para one. Para two. Para three. Para four. Para five.", "author": "A", "source": "Global Times", "kind": "china-official"},
     {"title": "Think Tank Analysis", "url": "https://e.com/2", "summary": "Deep analysis paragraph.", "author": "B", "source": "CSIS", "kind": "thinktank"},
     {"title": "Brief One", "url": "https://e.com/3", "summary": "Short.", "author": "", "source": "Al Jazeera", "kind": "independent"},
     {"title": "Brief Two", "url": "https://e.com/4", "summary": "Short two.", "author": "", "source": "Reuters", "kind": "aggregator"},
@@ -47,6 +47,15 @@ def test_write_plate_has_linotype_fields():
     # 归属保留
     check("Global Times" in plate, "主条站点 Global Times 未保留")
     check("Al Jazeera" in plate, "简讯站点 Al Jazeera 未保留")
+    # M-1: 含 %/& 的标题保持原始文本（不预转义——linotype build.py 统一转义）
+    check("Main China Story: 5% Growth & Trade" in plate,
+          "含 %/& 标题应保持原始文本")
+    check(r"5\%" not in plate and r"\&" not in plate, "plates 不应预转义 %/&")
+    # M-1: STORY-B 后直接正文段，且不得再有 BODY: 行（否则段落路由回主 body）
+    check("STORY-B: " in plate, "缺 STORY-B 字段")
+    sb_section = plate.split("STORY-B: ")[1].split("BRIEFS:")[0]
+    check("Deep analysis paragraph." in sb_section, "STORY-B 正文段缺失")
+    check("BODY:" not in sb_section, "STORY-B 后不应有 BODY: 行")
 
 
 def test_tex_escape():

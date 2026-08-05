@@ -59,11 +59,11 @@ _TEX_ESCAPES = {
 
 
 def tex_escape(s: str) -> str:
-    r"""转义 LaTeX 特殊字符（与 linotype build.py 同字符集，单遍替换）。
+    r"""仅供测试/参考：管线统一由 linotype build.py 转义，本函数不参与成版。
 
-    brief 逐字版的链式 replace 有缺陷：`\` → `\textbackslash{}` 输出的花括号
-    会被后续 {/} 替换二次转义成 `\textbackslash` 后跟字面花括号（LaTeX 渲染出错）。
-    这里用单遍 re.sub 一次完成，字符集不变（`\ { } & % $ # _ ~ ^`）。
+    plates 字段一律写原始文本（见模块 docstring 的转义约定），此处仅作为
+    单遍替换实现的参考、供测试校验字符集（`\ { } & % $ # _ ~ ^`，与 linotype
+    build.py 保持一致）。注意不要用它预转义 plates，会造成双重转义。
     """
     return re.sub(r"[\\{}&%$#_~^]", lambda m: _TEX_ESCAPES[m.group()], s)
 
