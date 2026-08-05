@@ -186,6 +186,110 @@ def test_match_cache_rewrite_fallback():
     check(item2 is None, "allow_rewrite=False 时精确匹配失败应返回 None")
 
 
+def test_supply_fulltext_fetched_for_main_spec():
+    """全文优先（2026-08-05）：主条规格缓存只有短摘要 → 抓全文附到素材上，agent 从全文压缩。"""
+    demand = {"plates": {"P3": {"requests": [
+        {"type": "main", "count": 1, "words": [250, 400], "topic": "space", "min_kind": "agency"}]}}}
+    cache = {"P3": [{"title": "Short NASA item", "url": "https://e.com/ns1", "summary": "word " * 60,
+                     "source": "NASA", "kind": "agency"}]}
+    calls = []
+
+    def fulltext_fn(url):
+        calls.append(url)
+        return "word " * 800  # 全文 800 词
+
+    results = sp.supply_requests(demand, cache, {}, Path("."), fulltext_fn=fulltext_fn)
+    item = results["P3"][0]
+    check(calls == ["https://e.com/ns1"], f"应抓最优候选全文：{calls}")
+    check(item.get("fulltext") is not None, "主条规格应抓全文")
+    check(len(item["fulltext"].split()) == 800, f"fulltext 应为 800 词，实际 {len(item['fulltext'].split())}")
+    check(item.get("needs_rewrite") is True, "全文达标仍需 needs_rewrite（压缩全文回填 summary）")
+    check(item.get("target_words") == [250, 400], "target_words 应保留供 agent 压缩")
+
+
+def test_supply_fulltext_fallback_summary():
+    """全文抓取失败/太短 → 保留摘要兜底（诚实薄主条，不中断整轮）。"""
+    demand = {"plates": {"P3": {"requests": [
+        {"type": "main", "count": 1, "words": [250, 400], "topic": "space", "min_kind": "agency"}]}}}
+    cache = {"P3": [{"title": "Short item", "url": "https://e.com/ns1", "summary": "word " * 60,
+                     "source": "NASA", "kind": "agency"}]}
+
+    def bad_fulltext(url):
+        raise RuntimeError("page blocked")
+
+    results = sp.supply_requests(demand, cache, {}, Path("."), fulltext_fn=bad_fulltext)
+    check(len(results["P3"]) == 1, "全文失败不应丢素材")
+    check("fulltext" not in results["P3"][0], "全文失败不应带 fulltext")
+    check(results["P3"][0]["summary"].startswith("word"), "应保留摘要兜底")
+
+
+def test_supply_no_fulltext_for_brief():
+    """简讯规格（下限 <250 词）不抓全文——摘要本够用，避免无谓请求。"""
+    calls = []
+    demand = {"plates": {"P3": {"requests": [
+        {"type": "brief", "count": 1, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}}
+    cache = {"P3": [{"title": "Brief item", "url": "https://e.com/ns1", "summary": "word " * 70,
+                     "source": "NASA", "kind": "agency"}]}
+
+    def fulltext_fn(url):
+        calls.append(url)
+        return "word " * 500
+
+    results = sp.supply_requests(demand, cache, {}, Path("."), fulltext_fn=fulltext_fn)
+    check(len(calls) == 0, f"简讯不应触发全文抓取：{calls}")
+    check(len(results["P3"]) == 1 and "fulltext" not in results["P3"][0], "简讯不应带 fulltext")
+
+
+def test_supply_rewrite_uses_fulltext():
+    """rewrite_fn（headless 兜底）路径：有 fulltext 时压缩全文而非短摘要。"""
+    demand = {"plates": {"P3": {"requests": [
+        {"type": "main", "count": 1, "words": [250, 400], "topic": "space", "min_kind": "agency"}]}}}
+    cache = {"P3": [{"title": "Item", "url": "https://e.com/ns1", "summary": "word " * 60,
+                     "source": "NASA", "kind": "agency"}]}
+    seen = {}
+
+    def fulltext_fn(url):
+        return "word " * 800
+
+    def rewrite_fn(text, lo, hi, source, title):
+        seen["input_words"] = len(text.split())
+        return "word " * 300
+
+    results = sp.supply_requests(demand, cache, {}, Path("."),
+                                 fulltext_fn=fulltext_fn, rewrite_fn=rewrite_fn)
+    check(seen.get("input_words") == 800,
+          f"rewrite 应压缩全文而非摘要，实际输入 {seen.get('input_words')} 词")
+    check(results["P3"][0]["summary"].count("word") == 300, "改写后 summary 应为压缩全文")
+    check("fulltext" in results["P3"][0], "fulltext 保留（缓存富集，供后续轮直接匹配）")
+
+
+def test_match_cache_uses_fulltext_words():
+    """缓存已有 fulltext 时按全文词数匹配主条规格（跨轮复用，不重复抓全文）。"""
+    req = {"words": [250, 400], "min_kind": "agency"}
+    cache = [{"title": "Long article", "url": "https://e.com/l1", "summary": "word " * 60,
+              "source": "NASA", "kind": "agency", "fulltext": "word " * 300}]
+    item = sp.match_cache(req, cache, set())
+    check(item is not None, "fulltext 300 词应命中 main 规格")
+    check(item.get("needs_rewrite") is True, "全文命中仍需 needs_rewrite（压缩回填 summary）")
+    check(item.get("target_words") == [250, 400], "target_words 应保留")
+
+
+def test_match_cache_tech_gate_p4():
+    """P4 题材门：国际金融稿不补科技版；国际科技稿命中；只剩金融稿不兜底。"""
+    req = {"words": [250, 400], "min_kind": "tech-media", "topic": "tech"}
+    cache = [
+        {"title": "Brazil to become regular borrower in China", "url": "https://e.com/b1",
+         "summary": "word " * 300, "source": "SCMP", "kind": "independent"},
+        {"title": "Nuclear fusion reactor achieves record output", "url": "https://e.com/f1",
+         "summary": "word " * 300, "source": "Phys.org", "kind": "tech-media"},
+    ]
+    item = sp.match_cache(req, cache, set())
+    check(item is not None and item["title"].startswith("Nuclear fusion"),
+          f"国际金融稿应按题材门排除，命中科技稿：{item and item['title'][:40]!r}")
+    item2 = sp.match_cache(req, [cache[0]], set())
+    check(item2 is None, "只剩国际金融稿时不兜底供给")
+
+
 def test_supply_requests_fetch_fn_no_duplicate():
     # 审查修复 I-1：fetch_fn 返回的素材必须记入 used，同一 URL 不得重复供给
     demand = {"plates": {"P3": {"requests": [
@@ -222,12 +326,18 @@ def main():
     test_supply_rewrite_failure_keeps_original()
     test_supply_agent_path_keeps_rewrite_markers()
     test_match_cache_skips_stale_via_url_date()
+    test_supply_fulltext_fetched_for_main_spec()
+    test_supply_fulltext_fallback_summary()
+    test_supply_no_fulltext_for_brief()
+    test_supply_rewrite_uses_fulltext()
+    test_match_cache_uses_fulltext_words()
+    test_match_cache_tech_gate_p4()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print("ALL TESTS PASSED (10 tests)")
+    print("ALL TESTS PASSED (16 tests)")
 
 
 if __name__ == "__main__":

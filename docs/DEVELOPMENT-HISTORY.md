@@ -145,14 +145,33 @@ Regression: 44/44 green (fetch 8 / demand 4 / supply 10 / build_plates 17 / rewr
 | 27 | supplied NASA briefs still lost p3.md slot | C-1c phase-6: 2-level priority then `kind_rank` decided within tier — china-official 0 squeezed out agency 2 | 3-tier priority + target-distance axis (briefs) + MIN_MAIN_WORDS=100 gate (mains) |
 | 28 | 38-word supplied brief was P3/P4 headline | C-1c phase-6: no main word-count gate | ≥100-word primary pool; fallback only when material exhausted |
 | 29 | fix report claimed "P3 briefs = NASA, 14 unique supplied" | C-2 phase-6: claims not checked against artifact | docs re-verified against regenerated output (real: P3 12 / P4 10 unique supplied URLs) |
+| 30 | 66-word summary cannot supply a 250-400 main | compress-only iron rule + short RSS descriptions | `fetch_fulltext()` + `fulltext_fn` — main/deep-dive specs auto-fetch the article (272-word E2E), summaries for briefs + fallback |
+| 31 | P4 matched SCMP "Brazil borrower" finance story | P4 pool was 4 China sources; after widening, international general RSS overflow | positive `_tech_gate`: non-China titles without tech keywords deprioritized; China-official stays identity core |
+| 32 | brief spec got fulltext fetched | fulltext intended for mains only | gate on `words[0] >= 250` — briefs skip fulltext_fn |
 
 ## What survives
 
-- **44 regression tests** → `tests/run_tests.py` (fetch 8 / demand 4 / supply 10 / build_plates 17 / rewrite 5)
+- **52 regression tests** → `tests/run_tests.py` (fetch 8 / demand 4 / supply 16 / build_plates 19 / rewrite 5)
 - **Demand-supply protocol** → linotype `--demand` (25/25 regression intact) + `demand.json` schema
 - **Compress-only iron rule** → agent-executed rewrite (SKILL.md 改写规则 chapter, user decision); `rewrite.py` kept as optional headless fallback
 - **Closed-loop mechanics** → build_plates regeneration + used persistence + 3-tier slot priority + main-word gate + pool-level cross-plate dedup + honest stop, verified E2E on the real 2026-08-05 cache
 - **Review gate** → SKILL.md/README 审料门 (human master switch over the automatic filters)
 - **Every measurement above is reproducible** — run the scripts on the examples or the E2E daily.
 
-The design debt we chose to accept: compress-only (no expansion means underfilled plates may persist), agent-executed rewrite requires an agent (headless runs use `rewrite.py` + LLM), and directed full-article fetching is the natural next step.
+The design debt we chose to accept: compress-only (no expansion means underfilled plates may persist), agent-executed rewrite requires an agent (headless runs use `rewrite.py` + LLM). Full-article fetching (2026-08-05 evening) closed the directed-fetch gap: mains now have real full text to compress; remaining shortfall is genuine source scarcity, reported honestly.
+
+## Phase 7 — Full-text-first supply + P4 widening (2026-08-05 evening)
+
+User decisions: *"如果你需要全文而不是摘要就可以满足排版需求，优先放全文。摘要是没有办法时候用。"* (full text first, summary fallback) and *"P4，从国际信源找科技报道也是可以的，比如核聚变等等。"* (P4 = China tech + international breakthroughs).
+
+| Change | Where | Evidence |
+|---|---|---|
+| `fetch_fulltext(url, max_chars=8000)` — all article paragraphs, sentence-boundary truncation | `fetch_sources.py` | reuses existing paragraph junk filters |
+| `supply_requests(..., fulltext_fn)` — fetch full text for `words[0] >= 250` candidates; attach `fulltext`; summary fallback on failure | `supply.py` | E2E: SCMP summary 66 words → full text 272 words, genuinely in [250,400] |
+| `match_cache` counts `fulltext` words; fulltext-hit still marks `needs_rewrite` (compress back into summary) | `supply.py` | cached full text reused across loop rounds, no re-fetch |
+| linotype P4: `topic "tech"`, `min_kind "tech-media"` | `linotype-repo/build.py` (both copies) | demand now accepts rank ≤ 6 international tech sources |
+| `TOPIC_TO_PLATE["tech"] = 4` (keeps `china-tech` compat) | `build_plates.py` | demand topic maps to plate 4, not default 1 |
+| P4 sources +6: ITER, Phys.org, TechXplore, Nature, IEEE Spectrum, New Scientist | `sources.json` | live fetch: P4 pool 4 → 10 sources, 80 items |
+| `_tech_gate` — P4 positive subject gate for non-China items | `build_plates.py` + `supply.py` | live match: Brazil finance gated, defence-AI story hit |
+| SKILL.md full-text-first rule (rewrite rule 0) + loop step 3 wording | `SKILL.md` | agent compresses full text, never expands a short summary |
+| +6 tests (5 supply fulltext/gate, 1 build_plates tech gate/mapping) | `tests/` | 44 → 52, all green; linotype 25/25 intact |

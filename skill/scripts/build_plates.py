@@ -30,7 +30,9 @@ KIND_RANK = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
 PLATE_KICKERS = {1: "WORLD & DIPLOMACY", 2: "AI & TECH", 3: "SPACE EXPLORATION", 4: "CHINA TECH"}
 
 # demand 的 topic 字段 → 版号（终审 I-4：supply 端也用 topic 过滤）
-TOPIC_TO_PLATE = {"world/military": 1, "ai/tech": 2, "space": 3, "china-tech": 4}
+# P4 2026-08-05 放宽：linotype 发 "tech"（中国科技 + 国际科技突破，如核聚变）；
+# 旧 "china-tech" 保留兼容历史 demand 文件
+TOPIC_TO_PLATE = {"world/military": 1, "ai/tech": 2, "space": 3, "china-tech": 4, "tech": 4}
 
 # 时效过滤（终审 I-3）：date 字段存在且超过此天数 → 过期素材（如 RSS 里的 2017 归档稿）
 MAX_STALE_DAYS = 30
@@ -147,6 +149,33 @@ def _topic_penalty(title: str, plate: int) -> int:
     return 1 if any(k in t for k in TOPIC_OFF_KEYWORDS.get(plate, ())) else 0
 
 
+# P4 放宽（2026-08-05 用户决策）：P4 从"只中国科技"放宽为"中国科技 + 国际科技突破
+# （如核聚变）"。sources.json 新增 6 个国际科技源后，池内 80% 是国际综合新闻 RSS——
+# 负向过滤拦不住金融/政治稿（实测 SCMP 巴西借款稿曾命中 main 规格）。加正向题材门：
+# 非中国源标题无科技关键词 → 降权；中国官方源（china-official）是 P4 身份核心，
+# 仍只走负向过滤（不误杀，中国科技突破仍是主位）。
+_TECH_TITLE_RE = re.compile(
+    r"\b(fusion|nuclear|energy|solar|wind|electric|battery|chip|semiconductor|quantum|"
+    r"robot|robotics|artificial intelligence|\bai\b|algorithm|machine learning|software|"
+    r"hardware|computer|computing|data|network|internet|telecom|5g|6g|satellite|launch|"
+    r"orbit|rocket|space|lunar|mars|physics|science|scientific|research|biotech|"
+    r"biotechnology|gene|genome|drug|vaccine|carbon|climate|material|materials|engineering|"
+    r"innovation|startup|technology|tech|smart|digital|cloud|cyber|vehicle|\bev\b)\b", re.I)
+
+
+def _tech_gate(item: dict, plate: int) -> int:
+    """P4 科技题材门：非中国源标题无科技关键词 → 1（降权到题材匹配素材之后）。
+
+    返回 1 的素材仅降权不删除（宁缺毋滥边界：素材用尽仍可回退，正常被科技稿压掉）。
+    plate ≠ 4 恒返回 0（其他版块不设正门，保持既有行为）。
+    """
+    if plate != 4:
+        return 0
+    if item.get("kind") == "china-official":
+        return 0  # 中国官方源 = P4 身份核心，仍只走负向过滤
+    return 0 if _TECH_TITLE_RE.search(item.get("title", "")) else 1
+
+
 def _dedup(items: list[dict]) -> list[dict]:
     """去重（终审 I-2）：同 URL / 同标题（归一化）只保留首个。"""
     seen_urls, seen_titles, out = set(), set(), []
@@ -217,6 +246,7 @@ def pick_main_stories(news: list[dict], n: int = 2, plate: int = 1) -> list[dict
             and _is_english(x["title"] + " " + x["summary"])]
     ordered = sorted(pool, key=lambda x: (
         _topic_penalty(x["title"], plate),
+        _tech_gate(x, plate),
         _supply_tier(x, "main"),
         KIND_RANK.get(x["kind"], 9),
         _length_key(x, "main")))
@@ -240,6 +270,7 @@ def pick_briefs(news: list[dict], exclude: set, n: int = 4, plate: int = 1) -> l
             and _is_english(x["title"] + " " + x["summary"])]
     pool.sort(key=lambda x: (
         _topic_penalty(x["title"], plate),
+        _tech_gate(x, plate),
         _supply_tier(x, "brief"),
         _length_key(x, "brief"),
         KIND_RANK.get(x["kind"], 9)))

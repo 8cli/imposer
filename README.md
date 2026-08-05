@@ -31,7 +31,7 @@ Its core differentiator is the **demand-supply contract**: Linotype is the deman
 - **Demand-supply contract** — Linotype emits `demand.json` (per-plate fill %, deficit in pt, requested stories by type/words/source-rank); Imposer supplies exactly what's requested
 - **Agent-executed compression (compress-only)** — Imposer is a skill; the agent that runs it *is* an LLM, so it compresses over-length stories directly per the rewrite-rules chapter in SKILL.md. `supply.py` marks each item with `needs_rewrite` + `target_words` as the agent's signal. **Never expands**: short material is used as-is (no fact fabrication)
 - **Compress-only iron rule** — short stories (≤ word cap) are returned verbatim; only over-length stories are compressed. Quality over forced filling. `rewrite.py` (Claude API) remains as an optional fallback for headless cron automation
-- **Concurrent source collection** — 55+ sources across 4 sections fetched in parallel (~28s), RSS-first with page-scraping fallback
+- **Concurrent source collection** — 60 sources across 4 sections fetched in parallel (~28s), RSS-first with page-scraping fallback
 - **English-only filter** — rejects non-Latin material (Cyrillic, Bulgarian, language-switcher links) to preserve the English-daily positioning
 - **Serious-newspaper standard** — configurable `fill_min` threshold (default 0.45, serious standard 0.65): underfilled plates trigger order sheets instead of accepting sparse pages
 - **Full attribution** — every story keeps reporter name + source (`By John Smith · Reuters`; no byline → `By {source} News Desk`); briefs carry source at the end
@@ -42,7 +42,7 @@ Its core differentiator is the **demand-supply contract**: Linotype is the deman
 ## Architecture
 
 ```
-news sources (55+, 4 sections)
+news sources (60, 4 sections)
       │  fetch_sources.py (concurrent RSS + page)
       ▼
 fetch_results.json  +  sources/pN.md archive
@@ -84,7 +84,9 @@ python3 scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $
 #    → re-compose → re-typeset (≤2 rounds; full agent-executed loop in SKILL.md)
 ```
 
-The first daily edition (2026-08-05), honestly reported: 54 sources → 4 plates → Linotype typeset with autofit + `--demand`. **Two earlier claims about this artifact were wrong and are corrected here**: (1) "P3 briefs = supplied NASA items" — the actual p3.md briefs were China Daily 2017 archives + JAXA + CNSA, because slot priority stopped at `kind_rank` (china-official rank 0 squeezed out agency); (2) "2017 archive no longer enters plates" — the actual P3/P4 headlines were the 2017-12-12 "Taiwan's New Party" archive, whose empty `date` field bypassed the recency filter. After the Phase-6 fixes (URL-date recency fallback, four-plate pool-level dedup, 3-tier supply slot priority + main word-count gate), re-running `build_plates.py` on the same cache produces plates with **zero 2017/archive URLs, zero cross-plate duplicate URLs, and p3.md briefs that are the supplied NASA items** ("Advanced Mini-laboratories…", "NASA Will Attempt…", "NASA's PUNCH…"). P3/P4 brief deficits persist (final fill 56% / 54%): fill gains during autofit come from **font-scaling, not content backfill**, and the loop **honestly stops and reports the unmet demand** instead of claiming convergence. Full convergence requires directed full-article fetching (documented extension point) or accepting the sparse-but-honest layout. Reproduce: `fetch_sources.py` → `build_plates.py` → linotype `--demand` → the agent-executed loop in `SKILL.md`.
+The first daily edition (2026-08-05), honestly reported: 54 sources → 4 plates → Linotype typeset with autofit + `--demand`. **Two earlier claims about this artifact were wrong and are corrected here**: (1) "P3 briefs = supplied NASA items" — the actual p3.md briefs were China Daily 2017 archives + JAXA + CNSA, because slot priority stopped at `kind_rank` (china-official rank 0 squeezed out agency); (2) "2017 archive no longer enters plates" — the actual P3/P4 headlines were the 2017-12-12 "Taiwan's New Party" archive, whose empty `date` field bypassed the recency filter. After the Phase-6 fixes (URL-date recency fallback, four-plate pool-level dedup, 3-tier supply slot priority + main word-count gate), re-running `build_plates.py` on the same cache produces plates with **zero 2017/archive URLs, zero cross-plate duplicate URLs, and p3.md briefs that are the supplied NASA items** ("Advanced Mini-laboratories…", "NASA Will Attempt…", "NASA's PUNCH…"). P3/P4 brief deficits persist (final fill 56% / 54%): fill gains during autofit come from **font-scaling, not content backfill**, and the loop **honestly stops and reports the unmet demand** instead of claiming convergence. Reproduce: `fetch_sources.py` → `build_plates.py` → linotype `--demand` → the agent-executed loop in `SKILL.md`.
+
+**Evening update (2026-08-05) — the two structural supply gaps are now addressed**: (1) **full-text first, summary fallback** (user decision): `supply.py` now fetches the full article for main/deep-dive specs (`words[0] ≥ 250`) when the cache holds only a short RSS summary — verified end-to-end: a 66-word SCMP summary became a 272-word full text, genuinely usable for a [250,400] main; summaries remain for briefs and as the fallback when full text is unavailable. Full text is cached (`fulltext` field), so later loop rounds match on it without re-fetching. (2) **P4 widened from China-only tech to China tech + international breakthroughs** (e.g. fusion): linotype now emits `topic: "tech"`, `min_kind: "tech-media"` for P4, and `sources.json` adds ITER, Phys.org, TechXplore, Nature, IEEE Spectrum, New Scientist (all URL-verified) — P4 pool grew from 4 to 10 sources (80 items in a live fetch). A positive **tech subject gate** (`_tech_gate`) keeps the international overflow honest: non-China items whose title has no tech keyword are deprioritized (a live SCMP "Brazil borrower" finance story was gated out in favor of a defence-AI story). China-official sources stay the plate's identity core and are not over-filtered.
 
 ## Review gate (审料门)
 
@@ -94,7 +96,7 @@ Composing plates is **not mechanical pasting** — before `build_plates.py` runs
 2. **Five checks** — drop any item that fails one:
    - **Title**: a real headline, not nav copy ("Download press kit", an email, `About Us`)
    - **Attribution**: has a reporter or source name, traceable
-   - **Topic**: matches the section (P1 world/military · P2 ai/tech · P3 space · P4 china-tech)
+   - **Topic**: matches the section (P1 world/military · P2 ai/tech · P3 space · P4 tech: China + international breakthroughs)
    - **Recency**: not a >30-day archive story
    - **URL legality**: `http(s)`, not a filing page, not `javascript:`/`#`/nav link
 3. **Only then compose** — run `build_plates.py`.
@@ -118,9 +120,9 @@ Linotype emits `demand.json` when a plate is underfilled (`--demand` + `fill_min
 | `requests[].type` | `brief` (<100pt deficit) · `main` (100-300pt) · `deep_dive` (>300pt, think-tank) |
 | `requests[].words` | target word range (e.g. [60, 90] for a brief) |
 | `requests[].min_kind` | minimum source rank (China-friendly priority) |
-| `requests[].topic` | plate topic (P1 world/military · P2 ai/tech · P3 space · P4 china-tech) |
+| `requests[].topic` | plate topic (P1 world/military · P2 ai/tech · P3 space · P4 tech) |
 
-Imposer's `supply.py` matches cached material by `topic × words × min_kind`; if a longer-than-cap story is closest, it is flagged `needs_rewrite` + `target_words` and **the agent compresses it** to the target range (compress-only; `rewrite.py` is the optional headless fallback). Backfill → re-compose → re-typeset → read demand again, **≤2 rounds** to avoid infinite loops.
+Imposer's `supply.py` matches cached material by `topic × words × min_kind`; **full text first** — for main/deep-dive specs the best candidate's full article is fetched (`fulltext_fn`, cached as `fulltext`) and the **agent compresses the full text** to the target range (compress-only, never expand a short summary); summaries serve briefs and as the fallback when full text is unavailable. `rewrite.py` is the optional headless fallback. Backfill → re-compose → re-typeset → read demand again, **≤2 rounds** to avoid infinite loops.
 
 ## Content Format
 
@@ -153,7 +155,7 @@ Special characters are escaped by Linotype's `build.py` (Imposer writes raw text
 | P1 World & Military | Global Times, Xinhua, CGTN | Al Jazeera, TASS, Asia Times, AMR, Naval News, DefenceTalk, WaPo/NYT/VOA/ABC (western supplement), CSIS/Brookings/RAND/CFR (think-tank) |
 | P2 AI & Tech | Moonshot, Z.ai, DeepSeek, Alibaba | Google, OpenAI, Anthropic, NVIDIA, xAI, Cloudflare, MS, GitHub, Amazon, Yahoo/AOL, MIT/Ars |
 | P3 Space | CNSA, Xinhua Space | NASA, ESA, JAXA, ISRO, SpaceX, Rocket Lab, SpaceNews, Space.com, NASA Spaceflight, Universe Today |
-| P4 China Tech | China Daily, Global Times, Xinhua | SCMP |
+| P4 Tech (China + int'l) | China Daily, Global Times, Xinhua | SCMP, ITER, Phys.org, TechXplore, Nature, IEEE Spectrum, New Scientist |
 
 All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/remove sources.
 
@@ -163,10 +165,10 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 |---|---|---|
 | `fetch_sources.py` | Concurrent RSS+page collection | `<sources.json> <out_dir>` (→ fetch_results.json + sources/pN.md) |
 | `parse_demand.py` | Read build output + demand.json → health report | `<build.log> [--log x.log] [--demand demand.json]` |
-| `supply.py` | Match demand → stories (agent rewrite markers; rewrite_fn optional) | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
+| `supply.py` | Match demand → stories (full-text-first for mains; agent rewrite markers; rewrite_fn optional) | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
 | `rewrite.py` | Optional headless compress-only rewrite (Claude API) | `<summary> <min_words> <max_words> [--source X] [--title Y]` |
-| `build_plates.py` | Material → linotype field-format plates (recency URL fallback + pool-level cross-plate dedup) | `<fetch_results.json> <out_dir>` (→ plates/p1-p4.md) |
-| `tests/run_tests.py` | Regression suite (44 tests) | `python3 tests/run_tests.py` |
+| `build_plates.py` | Material → linotype field-format plates (recency URL fallback + pool-level cross-plate dedup + P4 tech gate) | `<fetch_results.json> <out_dir>` (→ plates/p1-p4.md) |
+| `tests/run_tests.py` | Regression suite (52 tests) | `python3 tests/run_tests.py` |
 
 ## Requirements
 
@@ -180,24 +182,24 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 ```
 ├── SKILL.md               # Orchestration manual (agent-facing; rewrite rules chapter)
 ├── scripts/
-│   ├── sources.json       # 55+ verified sources (P1-P4)
-│   ├── fetch_sources.py   # Concurrent RSS+page collection
+│   ├── sources.json       # 60 verified sources (P1-P4)
+│   ├── fetch_sources.py   # Concurrent RSS+page collection (+ fetch_fulltext for mains)
 │   ├── parse_demand.py    # Linotype demand → health report
-│   ├── supply.py          # Demand-supply matching (agent rewrite markers)
+│   ├── supply.py          # Demand-supply matching (full-text-first; agent rewrite markers)
 │   ├── rewrite.py         # Optional headless compress-only fallback (Claude API)
-│   └── build_plates.py    # Material → linotype plates (recency + cross-plate dedup)
-├── tests/                 # Regression suite (44 tests, no pytest needed)
+│   └── build_plates.py    # Material → linotype plates (recency + cross-plate dedup + P4 tech gate)
+├── tests/                 # Regression suite (52 tests, no pytest needed)
 └── docs/                  # Design spec & dev history
 ```
 
 ## Known Limitations (accepted)
 
-- **Compress-only**: material shorter than the word cap is used as-is (never expanded) — underfilled plates may persist if the cache lacks sufficient material; directed fetching of full articles is the natural next step
+- **Compress-only**: material shorter than the word cap is used as-is (never expanded) — underfilled plates may persist if the cache lacks sufficient material. Full-text fetching (2026-08-05) now supplies mains from real articles; remaining shortfall is genuine source scarcity, reported honestly
 - **Agent-executed rewrite**: the primary compression path needs the agent at the controls (normal for a skill); headless cron automation uses the optional `rewrite.py` fallback (`anthropic` + API key or Claude CLI)
 - **No text-wrap images**: image handling follows Linotype's `\photo` (plate-top / between-element)
 - **Source volatility**: some sources rate-limit (Blue Origin 429, Microsoft 403 transient); failures are logged and skipped, not fatal
 - **Residual scrape junk / topic leaks**: page-scraped nav or general-China politics stories can beat the automatic filters — the review gate is the designed catch; per-source parsing rules and stronger topic signals are the extension points
-- **Brief slots cap at 3/plate**: brief-based supply alone cannot structurally converge a plate past ~3 briefs + 2 mains; larger deficits need a main-story upgrade or directed full-article fetch
+- **Brief slots cap at 3/plate**: brief-based supply alone cannot structurally converge a plate past ~3 briefs + 2 mains; larger deficits need a main-story upgrade (full text now supplies mains) or accepting the honest sparse layout
 
 ## License
 

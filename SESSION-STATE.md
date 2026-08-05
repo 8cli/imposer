@@ -1,7 +1,8 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
 > 保存：2026-08-05 13:20 UTC — 最终交付：终审 CLEAN + 公开仓库 + agent 改写架构
-> 状态：**全部完成并验证**（imposer 44/44 回归 + linotype 25/25；双仓库已推送 GitHub；E2E 首期样报产出）
+> 晚间更新（22:00 UTC）：P4 放宽（中国科技 + 国际突破）+ 全文优先供给（imposer 52/52 回归）
+> 状态：**全部完成并验证**（imposer 52/52 回归 + linotype 25/25；双仓库已推送 GitHub；E2E 首期样报产出 + 全文路径实测）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（34 条提交的调试全记录）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 4d6d39a）
 
@@ -20,13 +21,13 @@
 
 | 组件 | 文件 | 能力 |
 |---|---|---|
-| 信源配置 | `sources.json` | 55+ 已验证源（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 中国科技） |
+| 信源配置 | `sources.json` | 60 已验证源（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 科技：中国 + 国际突破） |
 | 信源抓取器 | `fetch_sources.py` | 并发 RSS+主页（as_completed + 8s 超时，55 源 ~28s）、XML 实体容错、英文过滤 |
 | 需求解析器 | `parse_demand.py` | 读 linotype 输出 + demand.json → 健康报告（4 种 Overfull 模式） |
 | 需求-供给匹配器 | `supply.py` | 按单匹配（topic×words×min_kind）、rewrite 标注、used 去重 |
 | 改写压缩器 | `rewrite.py` | **LLM 压缩兜底**（只压缩不扩写铁律；主路径是 agent 执行） |
 | 素材成版器 | `build_plates.py` | 素材 → linotype 字段格式 plates（归属/配比/时效/跨版去重/题材降权） |
-| 回归套件 | `tests/run_tests.py` | **44 项**（fetch 8 / demand 4 / supply 10 / build_plates 17 / rewrite 5） |
+| 回归套件 | `tests/run_tests.py` | **52 项**（fetch 8 / demand 4 / supply 16 / build_plates 19 / rewrite 5） |
 
 ### 与 linotype 的接口（跨仓库协议）
 
@@ -111,7 +112,7 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 ├── skill/
 │   ├── SKILL.md                   ← 8 步引导式闭环 + 改写规则
 │   ├── scripts/                   ← sources.json + 6 脚本
-│   └── tests/                     ← run_tests.py + 5 测试文件（44 项）
+│   └── tests/                     ← run_tests.py + 5 测试文件（52 项）
 ├── SESSION-STATE.md               ← 本文件
 └── .superpowers/sdd/              ← SDD 工作区（gitignored）
 
@@ -125,11 +126,12 @@ GitHub：
 
 ## 七、未来方向（可选增强）
 
-- **定向抓取全文**（fetch_fn）：缓存摘要 ~70 词供不起 main（250-400 词）规格——抓全文是补齐供给的结构性下一步
-- **topic 信号增强**：综合 RSS 泄漏政治稿（"Taiwan's New Party"）——按版块重整 sources.json 或加强题材信号
+- ✅ **全文优先供给**（2026-08-05 晚间落地）：`fetch_fulltext()` + `supply.py fulltext_fn`——主条/深度规格（≥250 词）缓存只有短摘要时自动抓全文压缩（摘要兜底），实测 66 词摘要 → 272 词全文。缓存 `fulltext` 字段跨轮复用
+- ✅ **P4 放宽**（2026-08-05 晚间落地）：中国科技 + 国际科技突破（核聚变等）——linotype 发 `topic:"tech"`/`min_kind:"tech-media"`，sources.json 加 ITER/Phys.org/TechXplore/Nature/IEEE Spectrum/New Scientist（实测 P4 池 80 条）；`_tech_gate` 正向题材门挡国际金融稿
+- **P3 中国航天新源**：P3 新鲜 china-official 素材仍为零（全被 2017 归档过滤）——需补充活跃中国航天英文源（CNSA 英文站更新慢）
+- **topic 信号增强**：综合 RSS 仍会泄漏非科技稿（题材门已兜底主要路径）——可进一步按版块重整 sources.json
 - **审料门自动化**：agent 引导式闭环已就位，可进一步自动预审（URL 合法性/题材/时效）减少人工
-- **信源分层**：P3 新鲜 china-official 素材为零（全被 2017 归档过滤）——需补充活跃中国航天源
-- **CI 集成**：GitHub Actions 跑 44 项回归（仿 linotype CI）
+- **CI 集成**：GitHub Actions 跑 52 项回归（仿 linotype CI）
 - **更多主题/版式**：随 linotype 演进
 
 ## 八、诚实的话

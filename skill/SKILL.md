@@ -54,10 +54,13 @@ SSE 解析/CLI 污染一堆坑，且是绕路）。`supply.py` 输出 `needs_rew
      ~/.claude/skills/imposer/scripts/sources.json $DAILY
    ```
    输出 `{plate: [素材]}`。带 `"needs_rewrite": true` + `"target_words": [lo, hi]`
-   的素材 = **需 agent 压缩改写的清单**（`used: true` 已标记）。
+   的素材 = **需 agent 压缩改写的清单**（`used: true` 已标记）。主条/深度规格
+   （target 下限 ≥250 词）的素材可能带 `"fulltext"` 字段——supply 已自动抓取全文
+   （全文优先铁律，见下）；改写用全文，摘要是全文不可得时的兜底。
 3. **agent 逐条压缩**（按下方"改写规则"章节执行）：对每条 `needs_rewrite` 素材，
-   把其 `summary` 压缩到 `target_words` 硬上限内，**只压缩不扩写**；改写后替换该条
-   的 summary 字段（保留 author/source/url/date/used/request 原样）。
+   **优先用其 `fulltext`（全文）压缩**到 `target_words` 硬上限内，无 `fulltext` 才用
+   `summary`——**只压缩不扩写，绝不从短摘要扩写**；改写后替换该条的 summary 字段
+   （保留 author/source/url/date/used/request 原样）。
 4. **回填缓存**：将供给结果（含改写后的 summary）追加回 `$DAILY/fetch_results.json`
    对应版块数组（携带 used=True，防第 2 轮重复供给）。
 5. **重新成版**：`python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY`
@@ -70,14 +73,19 @@ SSE 解析/CLI 污染一堆坑，且是绕路）。`supply.py` 输出 `needs_rew
    ```
 7. demand.json 仍有需求 → 回到第 1 步（≤2 轮）。
 8. **诚实报告**（终审 C-1d）：2 轮后仍未满足 → 列出每版 fill 与未满足请求
-   （count/规格/词数），不静默退出；提示可定向抓取全文（fetch_fn）或人工接受版面。
+   （count/规格/词数），不静默退出；全文已自动尝试（fulltext_fn 优先、摘要兜底），
+   仍不足 → 提示人工接受版面或补充信源。
 
 ## 改写规则（agent 执行时遵循——替代 rewrite.py 的 API 调用）
 
 压缩改写是**硬纪律**，逐条执行：
 
-1. **只压缩不扩写（铁律）**：素材词数 ≤ 需求上限（`target_words[1]`）时**原样返回**，
-   不调用任何 LLM；只有超长素材才压缩。**绝不新增事实、不编造来源**。
+0. **全文优先（用户决策 2026-08-05）**：素材带 `fulltext` 字段时，从全文压缩——
+   全文比摘要更能满足排版需求（250-600 词主条/深度规格），摘要是全文不可得时
+   （抓取失败/文章本就短）的兜底。`supply.py` 对主条/深度规格自动抓全文并附
+   `fulltext`；缓存富集后跨轮直接按全文匹配，不重复抓取。
+1. **只压缩不扩写（铁律）**：素材（全文或摘要）词数 ≤ 需求上限（`target_words[1]`）
+   时**原样返回**，不调用任何 LLM；只有超长素材才压缩。**绝不新增事实、不编造来源**。
 2. **硬词数上限**：改写后词数 ≤ `target_words[1]`（硬上限，宁可少不可超）；
    尽量落在 `[target_words[0], target_words[1]]` 区间内。
 3. **保留归属**：保留记者名（Byline）、站点名、以及 "according to Xinhua"、

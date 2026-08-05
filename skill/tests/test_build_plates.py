@@ -271,7 +271,33 @@ def test_pick_main_stories_filters_non_english():
           f"非英文素材未被过滤: {[m['title'][:30] for m in mains]}")
 
 
+def test_tech_gate_p4_international():
+    """P4 放宽加固：国际科技源进科技版需题材门——金融稿降权到科技稿之后，中国源不误杀。"""
+    news = [
+        {"title": "Brazil to become regular borrower in China", "url": "https://e.com/b1",
+         "summary": "word " * 120, "author": "", "source": "SCMP", "kind": "independent"},
+        {"title": "Nuclear fusion reactor achieves record output", "url": "https://e.com/f1",
+         "summary": "word " * 120, "author": "", "source": "Phys.org", "kind": "tech-media"},
+        {"title": "China launches chip export controls", "url": "https://e.com/c1",
+         "summary": "word " * 120, "author": "", "source": "GT", "kind": "china-official"},
+    ]
+    mains = bp.pick_main_stories(news, 3, plate=4)
+    titles = [m["title"] for m in mains]
+    check(titles.index("China launches chip export controls") < titles.index("Nuclear fusion reactor achieves record output"),
+          f"亲中科技稿应居首（kind_rank 决胜）：{titles}")
+    check(titles.index("Nuclear fusion reactor achieves record output") < titles.index("Brazil to become regular borrower in China"),
+          f"科技稿应排在金融稿之前：{titles}")
+
+
+def test_topic_to_plate_tech_mapping():
+    """P4 放宽（2026-08-05）：linotype 发 topic='tech' → 版 4；旧 'china-tech' 兼容。"""
+    check(bp.TOPIC_TO_PLATE.get("tech") == 4, "tech 应映射到版 4")
+    check(bp.TOPIC_TO_PLATE.get("china-tech") == 4, "china-tech 兼容映射到版 4")
+
+
 def main():
+    test_topic_to_plate_tech_mapping()
+    test_tech_gate_p4_international()
     test_pick_main_stories_prefers_china()
     test_byline_with_and_without_author()
     test_write_plate_has_linotype_fields()
@@ -294,7 +320,7 @@ def main():
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({17} tests)")
+    print(f"ALL TESTS PASSED ({19} tests)")
 
 
 if __name__ == "__main__":

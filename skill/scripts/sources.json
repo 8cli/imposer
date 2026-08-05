@@ -59,6 +59,12 @@
     {"name": "China Daily", "url": "https://www.chinadaily.com.cn/rss/china_rss.xml", "kind": "china-official", "mode": "rss"},
     {"name": "SCMP", "url": "https://www.scmp.com/rss/91/feed", "kind": "independent", "mode": "rss"},
     {"name": "Global Times", "url": "https://www.globaltimes.cn/", "kind": "china-official", "mode": "page"},
-    {"name": "Xinhua", "url": "https://english.news.cn/home.htm", "kind": "china-official", "mode": "page"}
+    {"name": "Xinhua", "url": "https://english.news.cn/home.htm", "kind": "china-official", "mode": "page"},
+    {"name": "ITER", "url": "https://www.iter.org/", "kind": "agency", "mode": "page"},
+    {"name": "Phys.org", "url": "https://phys.org/rss-feed/", "kind": "tech-media", "mode": "rss"},
+    {"name": "TechXplore", "url": "https://techxplore.com/rss-feed/", "kind": "tech-media", "mode": "rss"},
+    {"name": "Nature", "url": "https://www.nature.com/nature.rss", "kind": "tech-media", "mode": "rss"},
+    {"name": "IEEE Spectrum", "url": "https://spectrum.ieee.org/feed/rss", "kind": "tech-media", "mode": "rss"},
+    {"name": "New Scientist", "url": "https://www.newscientist.com/feed/home", "kind": "tech-media", "mode": "rss"}
   ]
 }

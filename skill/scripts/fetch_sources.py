@@ -201,6 +201,38 @@ def _fetch_summary(url: str, max_chars: int = 400) -> str:
     return truncated
 
 
+def fetch_fulltext(url: str, max_chars: int = 8000) -> str:
+    """抓取文章页全文（全文优先铁律 2026-08-05）——提取全部正文段落拼接。
+
+    与 _fetch_summary 的区别：不只首段，而是所有合格 <p> 段落（同样跳过
+    script/style/nav/footer、图片说明与 stub 填充），空格拼接后按句界截到
+    max_chars（≈1300 词，足够 250-600 词主条/深度规格压缩用）。
+
+    调用方：supply 对主条/深度规格（words[0] ≥ 250）的最优候选抓全文——
+    agent/rewrite 从全文压缩到 target_words（只压缩不扩写铁律），摘要是全文
+    不可得时的兜底。失败/超时返回空串（由 supply 侧兜底摘要，不中断整轮）。
+    """
+    try:
+        html = http_get(url)
+    except Exception:
+        return ""
+    paras = []
+    for m in re.finditer(r"<p[^>]*>(.*?)</p>", html, flags=re.S):
+        text = strip_tags(m.group(1))
+        if (text and len(text) > 40 and not is_junk_paragraph(text)
+                and re.search(r"[.!?]", text)):
+            paras.append(text)
+    body = " ".join(paras)
+    if not body.strip():
+        return ""
+    if len(body) > max_chars:
+        body = body[:max_chars]
+        cut = body.rfind(". ")
+        if cut > max_chars * 0.6:  # 句界截断（找不到句界则硬截）
+            body = body[: cut + 1]
+    return body.strip()
+
+
 def fetch_page(source: dict, max_items: int = 8) -> list[dict]:
     """主页抓取：优先 h2/h3 内嵌链接；无此结构的站点（如 globaltimes.cn）兜底到一般锚文本。
     每条候选顺带抓正文首段作摘要（_fetch_summary），避免空摘要素材无法成版。"""

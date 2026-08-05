@@ -80,7 +80,7 @@ agent. It enforces the same rules mechanically:
 2. **Empty fills = false convergence** — autofit converges on `not fills`; a failed compile (e.g. keyval error) yields no `Plate content` lines and autofit "converges" with fill=0. Always verify the log has content lines.
 3. **CLI `--print` is session-contaminated** — Claude CLI printed the session's system prompt as output. `--output-format stream-json` + SSE parse is reliable; the anthropic API path parses both SDK objects and local-proxy SSE strings.
 4. **Anthropic local proxy returns SSE strings** — `ANTHROPIC_BASE_URL` pointing at a forwarding proxy makes `messages.create` return raw SSE. Parse `data: {json}` lines for `content_block_delta`/`text_delta`.
-5. **Summaries cap at ~70 words** — first-paragraph extraction cannot supply `main` (250-400 word) specs. Compress-only means short material stays short; directed full-article fetch is the extension point.
+5. **Summaries cap at ~70 words — full text is the fix** — first-paragraph extraction cannot supply `main` (250-400 word) specs, and compress-only forbids expanding a summary. Implemented (2026-08-05 evening): `fetch_fulltext()` pulls the article for `words[0] ≥ 250` candidates at supply time; the agent compresses the full text (272-word E2E proof). Summaries stay for briefs and as the honest fallback. Full text is cached (`fulltext`), so later rounds match on it without re-fetching.
 6. **Concurrent fetch needs as_completed** — `ex.map` blocks on the slowest worker; `as_completed` returns as each finishes. Plus per-request timeout (8s) so slow sources don't stall the whole round.
 7. **Short sources never satisfy big deficits** — "compress-only" + sparse cache means underfilled plates persist; honest reporting (≤2 rounds, then stop) is the contract.
 8. **Font-scaling is not backfill** — autofit raises fill by enlarging type; only content backfill raises it structurally. Never report "fill rose" as loop evidence (the first E2E report made this error; corrected in Phase 5).
@@ -89,12 +89,13 @@ agent. It enforces the same rules mechanically:
 11. **A filter that silently skips its own trigger is a trap** — `is_stale` only fired on a `date` field, and the China Daily comprehensive RSS emits empty dates, so the 2017 archive (URL `/201712/12/`) sailed through. Every filter needs a fallback signal (URL date path) and a conservative catch-all (title-year), not a silent pass.
 12. **Slot priority must outrank editorial rank within its tier** — a 2-level "supplied-slot priority" still let `kind_rank` decide *within* the matched tier, so china-official (0) squeezed supplied NASA agency items out of the brief slots. A 3-tier priority with a target-distance axis (and a main word-count gate) is what actually lands backfill in the pages.
 13. **Dedup scope is per consumer, not per story** — intra-plate dedup left the same 2017 URLs as headlines in both P3 and P4. When plates share feeds (P3/P4 China Daily, P1/P4 GT/Xinhua), the used-URL set must span the whole four-plate pool.
+14. **Negative filters are not enough once a pool widens** — when P4 grew from 4 China sources to 10 (China + international tech), its general international RSS overflowed with finance/politics ("Brazil borrower" matched a `main` spec). A *positive* subject gate (`_tech_gate`: non-China titles must contain a tech keyword) is what keeps an international supplement honest; the plate's identity core (china-official) stays exempt so its own breadth isn't over-filtered.
 
 ## QA layers
 
 | Layer | What | Failure mode |
 |---|---|---|
-| Unit tests | 44 tests (fetch 8 / demand 4 / supply 10 / build_plates 17 / rewrite 5), no pytest needed | any pipeline regression |
+| Unit tests | 52 tests (fetch 8 / demand 4 / supply 16 / build_plates 19 / rewrite 5), no pytest needed | any pipeline regression |
 | Review gate | human pass over the material manifest before composing (SKILL.md 审料门, 5 checks) | junk that beats the automatic filters reaches a plate |
 | Compile-time | Linotype Overfull warnings (`plate: content` / `main column` / `aside column` / `mainstory`) + fill typeout | content exceeds viewport |
 | Demand check | `parse_demand.py` — health report + order sheets | underfilled plates trigger supply |
@@ -102,9 +103,9 @@ agent. It enforces the same rules mechanically:
 
 ## Known limitations (accepted)
 
-- **Compress-only**: short material used as-is; big deficits may persist without directed full-article fetching.
+- **Compress-only**: short material used as-is; big deficits may persist where even full text is genuinely scarce (reported honestly).
 - **Agent-executed rewrite**: the primary compression path needs an agent at the controls (imposer is a skill, so that's the normal case); headless cron automation uses `rewrite.py` + `anthropic`/API key (or Claude CLI) as the documented fallback.
 - **Source volatility**: rate-limits (Blue Origin 429, Microsoft 403) are logged and skipped, not fatal.
 - **Residual scrape junk**: page-scraped sources can leak nav/topic-page links (RAND topic pages, Amazon nav) that beat the automatic filters — the review gate is the designed catch; per-source parsing rules are the extension point.
 - **Residual topic leaks**: general-China feeds (China Daily RSS) in P3/P4 can supply politics stories that miss the lightweight keyword list — review gate catches; per-section source curation or stronger topic signals are the extension point.
-- **Brief slots cap at 3/plate**: brief-based supply cannot structurally converge a plate past ~3 briefs + 2 mains; larger deficits need a main-story upgrade or directed full-article fetch.
+- **Brief slots cap at 3/plate**: brief-based supply cannot structurally converge a plate past ~3 briefs + 2 mains; larger deficits need a main-story upgrade (full text now supplies mains) or accepting the honest sparse layout.
