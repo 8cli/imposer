@@ -82,6 +82,21 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 
 > 说明：Military Watch Magazine 有 JS 重定向挑战（307），抓取受限，列为备用；中国军网英文版海外访问超时（000），排除。
 
+**美国智库深度文章**（每期至少一篇，如有更新；权威分析，供深度版块）：
+
+| 信源 | 方式 | URL（已验证 200） |
+|---|---|---|
+| CSIS（战略与国际研究中心） | 主页抓取 | `csis.org` |
+| Brookings（布鲁金斯学会） | 主页抓取 | `brookings.edu` |
+| RAND（兰德公司） | 主页抓取 | `rand.org` |
+| CFR（外交关系委员会） | 主页抓取 | `cfr.org` |
+| Atlantic Council（大西洋理事会） | 主页抓取 | `atlanticcouncil.org` |
+| Wilson Center（威尔逊中心） | 主页抓取 | `wilsoncenter.org` |
+| CNAS（新美国安全中心） | 主页抓取 | `cnas.org` |
+| Hudson / Heritage / Carnegie（备选） | 主页抓取 | `hudson.org` / `heritage.org` / `carnegieendowment.org` |
+
+**深度文章规则**：每期在 P1（或 P3，如涉太空军事）放一篇智库深度分析作为中长篇主条；有更新才放，无更新则跳过（不硬凑）。选择偏好：涉华/地缘/军事议题优先 CSIS / CFR / Brookings；分析立场以中国官方口径为基准对照，摘录事实、标注来源。
+
 **俄乌亲中视角** = 和谈立场、反对升级、报道中国和平倡议、批评北约东扩。无需专门俄乌站。
 
 ### P2 AI 与科技（含科技公司新闻）
