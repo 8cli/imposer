@@ -5,18 +5,37 @@
 素材来源: ① fetch 缓存（本日已抓未用）→ ② 定向抓取（该版块信源补抓）
 用法: python3 supply.py <demand.json> <fetch_results.json> <sources.json> <out_dir>
 """
-import argparse, json, sys
+import argparse, json, re, sys
 from pathlib import Path
+
+_LATIN_RE = re.compile(r"[A-Za-z]")
+
+
+def _is_english(text: str, threshold: float = 0.85) -> bool:
+    """粗略英文判定：拉丁字母占非空白字符比例 ≥ threshold（与 build_plates 同逻辑）。
+
+    过滤非英文素材（如 CGTN 语言选择链接、TASS 西里尔内容），保证英文日报定位。
+    """
+    stripped = "".join(text.split())
+    if not stripped:
+        return False
+    latin = len(_LATIN_RE.findall(stripped))
+    return latin / len(stripped) >= threshold
 
 
 def match_cache(request: dict, cache: list[dict], used_urls: set) -> dict | None:
-    """从缓存挑符合规格（topic 由版块决定，用 kind 过滤）的素材。"""
+    """从缓存挑符合规格（topic 由版块决定，用 kind 过滤）的素材。
+
+    英文过滤：标题或摘要非英文（拉丁占比 < 85%）不匹配。
+    """
     min_kind_rank = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
                      "china-ai": 4, "independent": 5, "tech-media": 6, "aggregator": 7,
                      "western": 8}
     for item in cache:
         if item["url"] in used_urls:
             continue
+        if not _is_english(item.get("title", "") + " " + item.get("summary", "")):
+            continue  # 非英文素材不补稿
         kind_ok = min_kind_rank.get(item["kind"], 9) <= min_kind_rank.get(request["min_kind"], 9)
         words = len(item.get("summary", "").split())
         words_ok = request["words"][0] <= words <= request["words"][1] + 100  # 摘要上界放宽
