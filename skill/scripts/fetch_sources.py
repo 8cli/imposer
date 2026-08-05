@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""imposer 信源抓取器 — RSS 首选 + 主页抓取。
+
+用法: python3 fetch_sources.py <sources.json> <out_dir>
+输出: <out_dir>/sources/pN.md（每版一个，含 URL/记者/站点/标题/摘要）
+      <out_dir>/fetch_results.json（E2E 接口，供 build_plates.py 消费）
+依赖: 仅标准库（urllib / xml.etree / re / json / argparse）
+"""
+import argparse
+import json
+import re
+import urllib.parse
+import urllib.request
+import xml.etree.ElementTree as ET
+from html import unescape
+from pathlib import Path
+
+UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
+TIMEOUT = 15
+
+
+def http_get(url: str) -> str:
+    req = urllib.request.Request(url, headers={"User-Agent": UA})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        return resp.read().decode("utf-8", errors="replace")
+
+
+def strip_tags(html: str) -> str:
+    text = re.sub(r"<script.*?</script>|<style.*?</style>", " ", html, flags=re.S)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"\s+", " ", unescape(text)).strip()
+
+
+def _strip_ns(root: ET.Element) -> None:
+    """去掉所有元素的命名空间前缀，使 find/iter 能用简单标签匹配。
+
+    Python 的 Element.find/iter 不解析文档内声明的 xmlns 前缀：
+    find("dc:creator") 只匹配字面 tag，iter("entry") 对带默认命名空间的
+    Atom feed 返回空。解析后统一去前缀即可兼容 RSS 2.0 与 Atom。
+    """
+    for el in root.iter():
+        if el.tag.startswith("{"):
+            el.tag = el.tag.rsplit("}", 1)[-1]
+
+
+def fetch_rss(source: dict, max_items: int = 8) -> list[dict]:
+    """解析 RSS → 新闻列表。返回 [{title, url, summary, author, date}]。"""
+    try:
+        xml_text = http_get(source["url"])
+        root = ET.fromstring(xml_text)
+    except Exception as e:
+        print(f"  ⚠️ {source['name']} RSS 失败: {e}")
+        return []
+    _strip_ns(root)
+    items = []
+    # 兼容 RSS 2.0 (item) 与 Atom (entry)
+    is_atom = root.find(".//item") is None
+    for item in root.iter("entry" if is_atom else "item"):
+        def text(tag):
+            el = item.find(tag)
+            return el.text.strip() if el is not None and el.text else ""
+        # RSS 2.0 取 item/title 文本；Atom 取 entry/title 文本
+        # （Atom 的 title 若在子元素中，用 .// 遍历兜底）
+        title = text("title")
+        if not title:
+            el = item.find(".//title")
+            title = el.text.strip() if el is not None and el.text else ""
+        link = text("link")
+        if not link:  # Atom 的 link 是属性
+            link_el = item.find("link")
+            link = link_el.get("href", "") if link_el is not None else ""
+        desc = text("description") or text("summary") or text("content")
+        author = text("dc:creator") or text("creator") or text("author") or text("author/name") or ""
+        date = text("pubDate") or text("updated") or ""
+        if title and link:
+            items.append({"title": title, "url": link, "summary": strip_tags(desc)[:400],
+                          "author": author, "date": date})
+        if len(items) >= max_items:
+            break
+    return items
+
+
+def fetch_page(source: dict, max_items: int = 8) -> list[dict]:
+    """主页抓取：优先 h2/h3 内嵌链接；无此结构的站点（如 globaltimes.cn）兜底到一般锚文本。"""
+    try:
+        html = http_get(source["url"])
+    except Exception as e:
+        print(f"  ⚠️ {source['name']} 主页失败: {e}")
+        return []
+    candidates = []
+    # 1) 提取 h2/h3 内的链接标题（新闻站常见结构），兼容单/双引号 href
+    for m in re.finditer(r"<h[23][^>]*>\s*<a[^>]*href=([\"'])([^\"']+)\1[^>]*>(.*?)</a>\s*</h[23]>",
+                         html, flags=re.S):
+        href, title = m.group(2), strip_tags(m.group(3))
+        if title and len(title) > 15 and not href.startswith("#"):
+            candidates.append({"title": title, "url": urllib.parse.urljoin(source["url"], href),
+                               "summary": "", "author": "", "date": ""})
+    # 2) 兜底：一般锚文本（无 h2/h3 的站点，如 globaltimes.cn）
+    if len(candidates) < max_items:
+        seen_titles = {c["title"] for c in candidates}
+        for m in re.finditer(r"<a[^>]*href=([\"'])([^\"']+)\1[^>]*>(.*?)</a>", html, flags=re.S):
+            href, title = m.group(2), strip_tags(m.group(3))
+            if (title and len(title) > 15 and not href.startswith("#")
+                    and " " not in href and title not in seen_titles):
+                candidates.append({"title": title, "url": urllib.parse.urljoin(source["url"], href),
+                                   "summary": "", "author": "", "date": ""})
+                seen_titles.add(title)
+            if len(candidates) >= max_items:
+                break
+    # 去重（同标题保留首个），限数量
+    seen, out = set(), []
+    for c in candidates:
+        if c["title"] not in seen:
+            seen.add(c["title"])
+            out.append(c)
+        if len(out) >= max_items:
+            break
+    return out
+
+
+def fetch_all(sources: dict, out_dir: Path) -> dict:
+    """抓取所有版块信源 → 返回 {plate: [news]} 并写归档 + fetch_results.json。"""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "sources").mkdir(parents=True, exist_ok=True)
+    results = {}
+    for plate, srcs in sources.items():
+        plate_news = []
+        for src in srcs:
+            news = fetch_rss(src) if src["mode"] == "rss" else fetch_page(src)
+            for n in news:
+                n["plate"] = plate
+                n["source"] = src["name"]
+                n["kind"] = src["kind"]
+            plate_news.extend(news)
+        results[plate] = plate_news
+        # 写信源归档
+        with open(out_dir / "sources" / f"{plate.lower()}.md", "w", encoding="utf-8") as f:
+            f.write(f"# {plate} 信源归档\n\n")
+            for n in plate_news:
+                byline = f"By {n['author']} · {n['source']}" if n["author"] else f"By {n['source']} News Desk"
+                f.write(f"## {n['title']}\n\n")
+                f.write(f"- 站点: {n['source']}\n- 记者: {byline}\n- URL: {n['url']}\n")
+                if n["date"]:
+                    f.write(f"- 时间: {n['date']}\n")
+                if n["summary"]:
+                    f.write(f"- 摘要: {n['summary']}\n")
+                f.write("\n")
+    # 落盘 JSON 供 build_plates.py 消费（E2E 接口）
+    with open(out_dir / "fetch_results.json", "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=2)
+    return results
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser()
+    ap.add_argument("sources_json")
+    ap.add_argument("out_dir")
+    args = ap.parse_args()
+    sources = json.load(open(args.sources_json))
+    results = fetch_all(sources, Path(args.out_dir))
+    for plate, news in results.items():
+        print(f"{plate}: {len(news)} 条新闻")
+    print(f"信源归档已写入 {args.out_dir}/sources/ + fetch_results.json")
