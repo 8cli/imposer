@@ -43,7 +43,7 @@ linotype 在 `--demand` 模式下输出 `demand.json`——每版缺什么：
   {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}}
 ```
 
-imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字数区间）× `min_kind`（最低信源层级，亲中优先）→ 缓存匹配 → 不足则定向抓取该版块信源 → 生成补稿 → 重排。
+imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字数区间）× `min_kind`（最低信源层级，亲中优先）→ 缓存匹配 → 不足则**近似匹配 + AI 改写**（返回最接近素材 + `needs_rewrite` + `target_words`，由编排层 AI 改写压缩到目标词数区间）→ 生成补稿 → 重排。改写原则：忠实原文不编造事实，压缩到目标词数，保留记者名与站点归属。
 
 **规格映射**：P1 world/military · P2 ai/tech · P3 space · P4 china-tech；需求类型按缺口：`<100pt → briefs`、`100-300pt → 1 main + briefs`、`>300pt → deep_dive + briefs`。
 

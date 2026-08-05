@@ -65,6 +65,22 @@ def test_supply_requests_returns_matched():
           "request 引用应为 demand 中的原始 request 对象")
 
 
+def test_match_cache_rewrite_fallback():
+    """精确规格匹配失败 → 返回最接近素材 + needs_rewrite（AI 改写压缩）。"""
+    req = {"words": [250, 400], "min_kind": "china-official"}
+    # 无 250-400 词素材，只有 60 词 china-official → 应 fallback 并标 needs_rewrite
+    cache = [{"title": "China story", "url": "https://c.com/1", "summary": "word " * 60,
+              "source": "Global Times", "kind": "china-official"}]
+    item = sp.match_cache(req, cache, set(), allow_rewrite=True)
+    check(item is not None and item.get("needs_rewrite") is True,
+          f"期望 fallback 素材 + needs_rewrite，实际 {item and item.get('needs_rewrite')}")
+    check(item.get("target_words") == [250, 400], "target_words 应为需求词数区间")
+
+    # allow_rewrite=False 时不 fallback
+    item2 = sp.match_cache(req, cache, set(), allow_rewrite=False)
+    check(item2 is None, "allow_rewrite=False 时精确匹配失败应返回 None")
+
+
 def test_supply_requests_fetch_fn_no_duplicate():
     # 审查修复 I-1：fetch_fn 返回的素材必须记入 used，同一 URL 不得重复供给
     demand = {"plates": {"P3": {"requests": [
@@ -93,6 +109,7 @@ def test_supply_requests_fetch_fn_no_duplicate():
 def main():
     test_match_cache_skips_used_and_filters_kind()
     test_supply_requests_returns_matched()
+    test_match_cache_rewrite_fallback()
     test_supply_requests_fetch_fn_no_duplicate()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")

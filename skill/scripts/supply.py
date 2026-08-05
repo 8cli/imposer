@@ -23,14 +23,19 @@ def _is_english(text: str, threshold: float = 0.85) -> bool:
     return latin / len(stripped) >= threshold
 
 
-def match_cache(request: dict, cache: list[dict], used_urls: set) -> dict | None:
+def match_cache(request: dict, cache: list[dict], used_urls: set,
+                allow_rewrite: bool = False) -> dict | None:
     """从缓存挑符合规格（topic 由版块决定，用 kind 过滤）的素材。
 
     英文过滤：标题或摘要非英文（拉丁占比 < 85%）不匹配。
+    allow_rewrite=True 时：精确规格匹配失败 → 返回最接近素材 + needs_rewrite 标注
+    （AI 改写压缩到目标词数区间——SKILL.md 编排层职责）。
     """
     min_kind_rank = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
                      "china-ai": 4, "independent": 5, "tech-media": 6, "aggregator": 7,
                      "western": 8}
+    best_fallback = None
+    best_dist = None
     for item in cache:
         if item["url"] in used_urls:
             continue
@@ -42,12 +47,27 @@ def match_cache(request: dict, cache: list[dict], used_urls: set) -> dict | None
         if kind_ok and words_ok:
             used_urls.add(item["url"])
             return item
-    return None
+        # 近似匹配：同 kind 层级内，摘要词数离目标区间最近的（供改写）
+        if allow_rewrite and kind_ok:
+            target_mid = (request["words"][0] + request["words"][1]) / 2
+            dist = abs(words - target_mid)
+            if best_dist is None or dist < best_dist:
+                best_dist = dist
+                best_fallback = item
+    if best_fallback:
+        used_urls.add(best_fallback["url"])
+        best_fallback["needs_rewrite"] = True
+        best_fallback["target_words"] = request["words"]
+    return best_fallback
 
 
 def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
-                    fetch_fn=None) -> dict:
-    """按 demand 供给 → {plate: [补充素材]}。fetch_fn 可注入（测试用）。"""
+                    fetch_fn=None, allow_rewrite: bool = True) -> dict:
+    """按 demand 供给 → {plate: [补充素材]}。fetch_fn 可注入（测试用）。
+
+    allow_rewrite=True（默认）: 精确规格匹配失败时返回最接近素材 + needs_rewrite，
+    由 SKILL.md 编排层 AI 改写压缩到目标词数区间。
+    """
     results = {}
     for plate, info in demand.get("plates", {}).items():
         plate_cache = cache.get(plate, [])
@@ -55,7 +75,7 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
         supplied = []
         for req in info.get("requests", []):
             for _ in range(req.get("count", 1)):
-                item = match_cache(req, plate_cache, used)
+                item = match_cache(req, plate_cache, used, allow_rewrite)
                 if item is None and fetch_fn:  # 缓存不足 → 定向抓取
                     item = fetch_fn(plate, req, sources, out_dir)
                     if item and item["url"] in used:  # 防 fetch 返回已供给 URL
