@@ -31,6 +31,31 @@ def strip_tags(html: str) -> str:
     return re.sub(r"\s+", " ", unescape(text)).strip()
 
 
+_XML_ENTITY_FIXES = {
+    "&nbsp;": " ", "&mdash;": "—", "&ndash;": "–",
+    "&rsquo;": "'", "&lsquo;": "'", "&ldquo;": '"', "&rdquo;": '"',
+    "&hellip;": "…", "&middot;": "·",
+    "&eacute;": "é", "&egrave;": "è", "&agrave;": "à", "&oacute;": "ó",
+    "&auml;": "ä", "&ouml;": "ö", "&uuml;": "ü",
+}
+
+
+def _parse_xml(xml_text: str) -> ET.Element:
+    """解析 XML；遇 XML 1.0 未定义实体（&nbsp; 等）替换后重试一次。
+
+    约束（实测验证）：
+    1. 只替换 XML 1.0 非法实体；&amp;/&lt;/&gt;/&quot;/&apos; 五个预定义实体不动；
+    2. 不用 html.unescape 预解码（会把 &lt;p&gt; 变真 <p> 破坏 XML 结构）；
+    3. 第二次解析仍失败则让 ParseError 上抛，由 fetch_rss 的 except 兜底（保留降级路径）。
+    """
+    try:
+        return ET.fromstring(xml_text)
+    except ET.ParseError:
+        for name, repl in _XML_ENTITY_FIXES.items():
+            xml_text = xml_text.replace(name, repl)
+        return ET.fromstring(xml_text)
+
+
 def _strip_ns(root: ET.Element) -> None:
     """去掉所有元素的命名空间前缀，使 find/iter 能用简单标签匹配。
 
@@ -47,7 +72,7 @@ def fetch_rss(source: dict, max_items: int = 8) -> list[dict]:
     """解析 RSS → 新闻列表。返回 [{title, url, summary, author, date}]。"""
     try:
         xml_text = http_get(source["url"])
-        root = ET.fromstring(xml_text)
+        root = _parse_xml(xml_text)
     except Exception as e:
         print(f"  ⚠️ {source['name']} RSS 失败: {e}")
         return []

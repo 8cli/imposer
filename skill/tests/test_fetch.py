@@ -82,6 +82,25 @@ def test_fetch_rss_atom():
         fs.http_get = orig
 
 
+def test_fetch_rss_bad_entities():
+    """XML 1.0 未定义实体（&nbsp;/&mdash;/&rsquo;）→ 替换后解析成功，不整源丢弃。"""
+    bad_xml = """<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item><title>Bad&nbsp;Entity&mdash;Story</title><link>https://example.com/bad</link>
+    <description>Fee&nbsp;fi&mdash;fum &rsquo;quoted&rsquo;.</description></item>
+</channel></rss>"""
+    orig = fs.http_get
+    fs.http_get = lambda url: bad_xml
+    try:
+        items = fs.fetch_rss({"url": "https://example.com/badrss", "name": "BadEntity"})
+        check(len(items) == 1, f"坏实体: 期望 1 条，实际 {len(items)}")
+        check(items[0]["title"] == "Bad Entity—Story", f"title 实体替换: {items[0]['title']!r}")
+        check(items[0]["summary"] == "Fee fi—fum 'quoted'.", f"summary 实体替换: {items[0]['summary']!r}")
+        check(items[0]["url"] == "https://example.com/bad", f"url: {items[0]['url']!r}")
+    finally:
+        fs.http_get = orig
+
+
 def test_strip_tags():
     out = fs.strip_tags("<p>A <b>test</b> &amp; more.</p>")
     check(out == "A test & more.", f"strip_tags: {out!r}")
@@ -131,6 +150,7 @@ def test_fetch_all_writes_archive_and_json():
 def main():
     test_fetch_rss_parses()
     test_fetch_rss_atom()
+    test_fetch_rss_bad_entities()
     test_strip_tags()
     test_fetch_page_fallback()
     test_fetch_all_writes_archive_and_json()
@@ -139,7 +159,7 @@ def main():
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({5} tests)")
+    print(f"ALL TESTS PASSED ({6} tests)")
 
 
 if __name__ == "__main__":
