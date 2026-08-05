@@ -51,7 +51,7 @@
     {"name": "Space.com", "url": "https://www.space.com/feeds/all", "kind": "tech-media", "mode": "rss"},
     {"name": "NASA Spaceflight", "url": "https://www.nasaspaceflight.com/feed/", "kind": "tech-media", "mode": "rss"},
     {"name": "Universe Today", "url": "https://www.universetoday.com/feed/", "kind": "tech-media", "mode": "rss"},
-    {"name": "Planetary Society", "url": "https://www.planetary.org/", "kind": "org", "mode": "page"},
+    {"name": "Planetary Society", "url": "https://www.planetary.org/", "kind": "independent", "mode": "page"},
     {"name": "Xinhua Space", "url": "https://www.news.cn/english/", "kind": "china-official", "mode": "page"},
     {"name": "China Daily Sci", "url": "https://www.chinadaily.com.cn/rss/china_rss.xml", "kind": "china-official", "mode": "rss"}
   ],

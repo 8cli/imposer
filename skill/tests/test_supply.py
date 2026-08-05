@@ -65,15 +65,41 @@ def test_supply_requests_returns_matched():
           "request 引用应为 demand 中的原始 request 对象")
 
 
+def test_supply_requests_fetch_fn_no_duplicate():
+    # 审查修复 I-1：fetch_fn 返回的素材必须记入 used，同一 URL 不得重复供给
+    demand = {"plates": {"P3": {"requests": [
+        {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "company"}]}}}
+    calls = []
+
+    def fetch_fn(plate, req, sources, out_dir):
+        calls.append(plate)
+        return {"title": "Fetched story", "url": "https://f.com/1",
+                "summary": "word " * 70, "source": "Fetcher", "kind": "company"}
+
+    results = sp.supply_requests(demand, {}, {}, Path("."), fetch_fn)
+    check(len(results["P3"]) == 1,
+          f"fetch 重复 URL（count=2）应只供给 1 条，实际 {len(results['P3'])}")
+    check(results["P3"][0]["url"] == "https://f.com/1", "供给素材应为 fetch 结果")
+    check(len(calls) == 2, f"fetch_fn 应按 count 调用 2 次，实际 {len(calls)}")
+    # 混合路径：缓存 1 条 + fetch 补第 2 条，fetch 结果记 used 后不再与缓存冲突
+    cache = {"P3": [{"title": "Cached story", "url": "https://c.com/1",
+                     "summary": "word " * 70, "source": "Cacher", "kind": "company"}]}
+    results = sp.supply_requests(demand, cache, {}, Path("."), fetch_fn)
+    check(len(results["P3"]) == 2, f"缓存1条+fetch1条 期望 2 条，实际 {len(results['P3'])}")
+    urls = {i["url"] for i in results["P3"]}
+    check(len(urls) == 2, f"混合路径不应有重复 URL：{urls}")
+
+
 def main():
     test_match_cache_skips_used_and_filters_kind()
     test_supply_requests_returns_matched()
+    test_supply_requests_fetch_fn_no_duplicate()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print("ALL TESTS PASSED (2 tests)")
+    print("ALL TESTS PASSED (3 tests)")
 
 
 if __name__ == "__main__":

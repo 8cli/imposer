@@ -39,7 +39,10 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
                 item = match_cache(req, plate_cache, used)
                 if item is None and fetch_fn:  # 缓存不足 → 定向抓取
                     item = fetch_fn(plate, req, sources, out_dir)
+                    if item and item["url"] in used:  # 防 fetch 返回已供给 URL
+                        item = None
                 if item:
+                    used.add(item["url"])  # fetch 素材也记 used，防重复供给
                     supplied.append({**item, "request": req})
         results[plate] = supplied
     return results
