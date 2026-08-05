@@ -70,6 +70,7 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 | OpenAI（新闻室） | 主页抓取 | `openai.com/news/` |
 | Anthropic（新闻室） | 主页抓取 | `anthropic.com/news` |
 | NVIDIA（新闻室） | 主页抓取 | `nvidianews.nvidia.com` |
+| xAI（Grok） | 主页抓取 | `x.ai/news` |
 | Cloudflare（官方博客） | RSS | `blog.cloudflare.com/rss/` |
 | Microsoft（官方博客） | RSS | `blogs.microsoft.com/feed/` |
 | GitHub（官方博客） | RSS | `github.blog/feed/` |
@@ -108,7 +109,7 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 
 | 信源 | 方式 | URL |
 |---|---|---|
-| SpaceX | 主页抓取 | `spacex.com` |
+| SpaceX | 新闻页抓取 | `spacex.com/news` |
 | Rocket Lab | 主页抓取 | `rocketlabusa.com` |
 | Blue Origin | 主页抓取（限流 429，抓取降级） | `blueorigin.com` |
 
