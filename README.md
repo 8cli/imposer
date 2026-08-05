@@ -153,7 +153,9 @@ Special characters are escaped by Linotype's `build.py` (Imposer writes raw text
 | Section | Primary (china-official) | Supplement |
 |---|---|---|
 | P1 World & Military | Global Times, Xinhua, CGTN | Al Jazeera, TASS, Asia Times, AMR, Naval News, DefenceTalk, WaPo/NYT/VOA/ABC (western supplement), CSIS/Brookings/RAND/CFR (think-tank) |
-| P2 AI & Tech | Moonshot, Z.ai, DeepSeek, Alibaba | Google, OpenAI, Anthropic, NVIDIA, xAI, Cloudflare, MS, GitHub, Amazon, Yahoo/AOL, MIT/Ars |
+| P2 AI & Tech | Moonshot, Z.ai, DeepSeek, Alibaba | Google, OpenAI†, Anthropic†, NVIDIA, xAI, Cloudflare, MS, GitHub, Amazon, Yahoo/AOL, MIT/Ars |
+
+† fetched via local RSSHub route (`/openai/news`, `/anthropic/news`).
 | P3 Space | CNSA, Xinhua Space | NASA, ESA, JAXA, ISRO, SpaceX, Rocket Lab, SpaceNews, Space.com, NASA Spaceflight, Universe Today |
 | P4 Tech (China + int'l) | China Daily, Global Times, Xinhua | SCMP, ITER, Phys.org, TechXplore, Nature, IEEE Spectrum, New Scientist |
 
@@ -163,7 +165,7 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 
 | Script | Purpose | Key args |
 |---|---|---|
-| `fetch_sources.py` | Concurrent RSS+page collection | `<sources.json> <out_dir>` (→ fetch_results.json + sources/pN.md) |
+| `fetch_sources.py` | Concurrent RSS+page collection (RSSHub routes first where `rsshub` field set) | `<sources.json> <out_dir>` (→ fetch_results.json + sources/pN.md) |
 | `parse_demand.py` | Read build output + demand.json → health report | `<build.log> [--log x.log] [--demand demand.json]` |
 | `supply.py` | Match demand → stories (full-text-first for mains; agent rewrite markers; rewrite_fn optional) | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
 | `rewrite.py` | Optional headless compress-only rewrite (Claude API) | `<summary> <min_words> <max_words> [--source X] [--title Y]` |
@@ -173,6 +175,7 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 ## Requirements
 
 - **Linotype** (`~/news/latex` or the [linotype repo](https://github.com/8cli/linotype)) — the typesetting engine, with `--demand` support (build.py ≥ 2026-08-05)
+- **RSSHub** (optional, recommended) — local Docker instance for sources that carry an `rsshub` route (currently OpenAI, Anthropic): `docker run -d --name rsshub --restart unless-stopped -p 1200:1200 -v rsshub-data:/app/data diygod/rsshub`. When a source has an `rsshub` field, collection prefers the RSSHub route (community-maintained precise parsing) and falls back to direct page-scraping if it returns empty.
 - **Python 3.10+** (stdlib for collection/composition)
 - **An agent** (normal case) to execute the rewrite per SKILL.md rules; or, for headless cron automation, the optional `rewrite.py` fallback needs `anthropic` + `ANTHROPIC_API_KEY` (falls back to Claude CLI)
 - **xelatex** (TeX Live) — via Linotype
@@ -197,7 +200,7 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 - **Compress-only**: material shorter than the word cap is used as-is (never expanded) — underfilled plates may persist if the cache lacks sufficient material. Full-text fetching (2026-08-05) now supplies mains from real articles; remaining shortfall is genuine source scarcity, reported honestly
 - **Agent-executed rewrite**: the primary compression path needs the agent at the controls (normal for a skill); headless cron automation uses the optional `rewrite.py` fallback (`anthropic` + API key or Claude CLI)
 - **No text-wrap images**: image handling follows Linotype's `\photo` (plate-top / between-element)
-- **Source volatility**: some sources rate-limit (Blue Origin 429, Microsoft 403 transient); failures are logged and skipped, not fatal
+- **Source volatility**: some sources rate-limit (Blue Origin 429, Microsoft 403 transient); failures are logged and skipped, not fatal. RSSHub routes are tried first where available (OpenAI, Anthropic); direct scraping is the fallback
 - **Residual scrape junk / topic leaks**: page-scraped nav or general-China politics stories can beat the automatic filters — the review gate is the designed catch; per-source parsing rules and stronger topic signals are the extension points
 - **Brief slots cap at 3/plate**: brief-based supply alone cannot structurally converge a plate past ~3 briefs + 2 mains; larger deficits need a main-story upgrade (full text now supplies mains) or accepting the honest sparse layout
 

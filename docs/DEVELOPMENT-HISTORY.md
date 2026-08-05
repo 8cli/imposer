@@ -148,6 +148,8 @@ Regression: 44/44 green (fetch 8 / demand 4 / supply 10 / build_plates 17 / rewr
 | 30 | 66-word summary cannot supply a 250-400 main | compress-only iron rule + short RSS descriptions | `fetch_fulltext()` + `fulltext_fn` — main/deep-dive specs auto-fetch the article (272-word E2E), summaries for briefs + fallback |
 | 31 | P4 matched SCMP "Brazil borrower" finance story | P4 pool was 4 China sources; after widening, international general RSS overflow | positive `_tech_gate`: non-China titles without tech keywords deprioritized; China-official stays identity core |
 | 32 | brief spec got fulltext fetched | fulltext intended for mains only | gate on `words[0] >= 250` — briefs skip fulltext_fn |
+| 33 | RSSHub installed to "fix" the 3 failing sources | assumed RSSHub rescues anti-bot-blocked feeds | measured: RSSHub has **no** route for WaPo/Microsoft/Blue Origin; its Nature route is dead (503); only OpenAI/Anthropic have live news routes — wired those via `rsshub` field + fallback to direct scrape |
+| 34 | RSSHub route returns empty | route stale or upstream changed | automatic fallback to the original page-scrape (`rsshub` field is a preference, not a single point of failure) |
 
 ## What survives
 
@@ -175,3 +177,15 @@ User decisions: *"如果你需要全文而不是摘要就可以满足排版需�
 | `_tech_gate` — P4 positive subject gate for non-China items | `build_plates.py` + `supply.py` | live match: Brazil finance gated, defence-AI story hit |
 | SKILL.md full-text-first rule (rewrite rule 0) + loop step 3 wording | `SKILL.md` | agent compresses full text, never expands a short summary |
 | +6 tests (5 supply fulltext/gate, 1 build_plates tech gate/mapping) | `tests/` | 44 → 52, all green; linotype 25/25 intact |
+
+## Phase 8 — Local RSSHub (2026-08-05 late evening)
+
+User asked whether direct scraping is the problem and whether a self-hosted RSSHub would be more reliable. Decision: deploy local Docker RSSHub (persistent) and measure what it actually covers before trusting it.
+
+| Measurement | Result |
+|---|---|
+| 61 sources, direct scrape | 58/61 OK (95%) — WaPo timeout, Microsoft 403, Blue Origin 429 |
+| RSSHub route coverage for our sources | only **OpenAI + Anthropic** have live news routes (10 items each, E2E verified); TASS/Nature routes are dead; NASA is only apod (not news); CGTN only podcast; Microsoft only addon/mcr; DeepSeek route serves Chinese API docs; google/amazon/yahoo empty or non-news; ESA/CNSA/JAXA/ISRO/SpaceX/GlobalTimes/Xinhua/CSIS/Brookings/RAND/ABC/NavalNews/AsiaTimes/DefenceTalk/EurAsianTimes/ITER/BlueOrigin have **no** route |
+| Conclusion | RSSHub is an incremental stabilizer, not a rescue for anti-bot sources. It cannot fix what the origin sites refuse to serve |
+
+Wired the useful part: sources.json now carries `"rsshub"` route paths (OpenAI `/openai/news`, Anthropic `/anthropic/news`); `fetch_sources.py` prefers the RSSHub route (community-maintained precise parsing) and **falls back to direct page-scraping when it returns empty** — a preference, not a single point of failure. +2 tests (route priority, empty-fallback). 52 → 54, all green.

@@ -190,6 +190,63 @@ def test_fetch_all_writes_archive_and_json():
         check(res["P1"][0]["title"] == "N1", f"fetch_results.json: {res}")
 
 
+def test_fetch_all_rsshub_route_priority():
+    """RSSHub 路由优先（2026-08-05）：有 rsshub 字段的 page 源走 localhost RSSHub RSS；
+    无字段走原主页。空/失败自动回退原主页（不中断）。"""
+    orig = fs.http_get
+
+    def fake_get(url):
+        if url.startswith(fs.RSSHUB_BASE):
+            return RSS_XML  # RSSHub 返回 RSS
+        return PAGE_HTML    # 原主页返回 HTML
+
+    fs.http_get = fake_get
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            sources = {
+                "P2": [
+                    {"name": "OpenAI", "url": "https://openai.com/news/", "kind": "company",
+                     "mode": "page", "rsshub": "/openai/news"},
+                    {"name": "Google", "url": "https://blog.google/", "kind": "company",
+                     "mode": "page"},
+                ]
+            }
+            fs.fetch_all(sources, Path(td), max_workers=2)
+            results = json.load(open(Path(td) / "fetch_results.json"))
+            openai_items = [i for i in results["P2"] if i["source"] == "OpenAI"]
+            google_items = [i for i in results["P2"] if i["source"] == "Google"]
+            check(openai_items and openai_items[0]["title"] == "Test Story One",
+                  f"OpenAI 应走 RSSHub RSS（Test Story One）：{[i['title'] for i in openai_items[:1]]}")
+            check(google_items and google_items[0]["title"].startswith("China launches"),
+                  f"Google 无 rsshub 字段应走原主页：{[i['title'][:30] for i in google_items[:1]]}")
+    finally:
+        fs.http_get = orig
+
+
+def test_fetch_all_rsshub_empty_falls_back():
+    """RSSHub 返回空 → 自动回退原主页直抓（RSSHub 是补强不是单点）。"""
+    orig = fs.http_get
+
+    def fake_get(url):
+        if url.startswith(fs.RSSHUB_BASE):
+            return "<?xml version='1.0'?><rss version='2.0'><channel></channel></rss>"  # 空 feed
+        return PAGE_HTML
+
+    fs.http_get = fake_get
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            sources = {"P2": [
+                {"name": "OpenAI", "url": "https://openai.com/news/", "kind": "company",
+                 "mode": "page", "rsshub": "/openai/news"}]}
+            fs.fetch_all(sources, Path(td), max_workers=1)
+            results = json.load(open(Path(td) / "fetch_results.json"))
+            items = results["P2"]
+            check(items and items[0]["title"].startswith("China launches"),
+                  f"RSSHub 空应回退主页：{[i['title'][:30] for i in items[:1]]}")
+    finally:
+        fs.http_get = orig
+
+
 def main():
     test_fetch_rss_parses()
     test_fetch_rss_atom()
@@ -199,12 +256,14 @@ def main():
     test_article_url_filter()
     test_fetch_rss_dedup_same_title()
     test_fetch_all_writes_archive_and_json()
+    test_fetch_all_rsshub_route_priority()
+    test_fetch_all_rsshub_empty_falls_back()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({8} tests)")
+    print(f"ALL TESTS PASSED ({10} tests)")
 
 
 if __name__ == "__main__":

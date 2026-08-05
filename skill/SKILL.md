@@ -148,6 +148,12 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 
 ## 信源与归属
 
+**RSSHub（可选增强）**：本机 Docker 持久化实例（`docker run -d --name rsshub --restart
+unless-stopped -p 1200:1200 -v rsshub-data:/app/data diygod/rsshub`）。sources.json 里带
+`"rsshub"` 字段的源（当前 OpenAI/Anthropic）采集时优先走 RSSHub 路由（社区维护的精确
+解析），返回空自动回退原主页直抓。RSSHub 是稳定性补强不是单点——直抓成功率 95% 的
+体系不因它失效而停摆。
+
 - 信源清单：`scripts/sources.json`（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 中国科技，全面亲中）
 - 归属铁律：`By {记者} · {站点}`；无记者 `By {站点} News Desk`；简讯末尾标站点；付费墙退 RSS 摘要标注 `[付费墙]`
 - 智库深度文章：每期至少一篇（CSIS/Brookings/RAND/CFR 等，有更新才放）

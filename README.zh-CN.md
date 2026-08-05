@@ -158,7 +158,9 @@ BRIEFS:
 | 版 | 主源（china-official） | 补充 |
 |---|---|---|
 | P1 国际军事 | 环球时报、新华社、CGTN | 半岛、塔斯社、亚洲时报、亚洲军事评论、海军新闻、防务对话、华盛顿邮报/纽约时报/VOA/ABC（西方补充）、CSIS/布鲁金斯/兰德/CFR（智库） |
-| P2 AI 科技 | 月之暗面、智谱、深度求索、阿里 | 谷歌、OpenAI、Anthropic、英伟达、xAI、Cloudflare、微软、GitHub、亚马逊、雅虎/AOL、MIT/Ars |
+| P2 AI 科技 | 月之暗面、智谱、深度求索、阿里 | 谷歌、OpenAI†、Anthropic†、英伟达、xAI、Cloudflare、微软、GitHub、亚马逊、雅虎/AOL、MIT/Ars |
+
+† 经本机 RSSHub 路由抓取（`/openai/news`、`/anthropic/news`）。
 | P3 太空 | 中国国家航天局、新华社航天 | NASA、ESA、JAXA、ISRO、SpaceX、火箭实验室、SpaceNews、Space.com、NASA Spaceflight、今日宇宙 |
 | P4 科技（中国 + 国际） | 中国日报、环球时报、新华社 | 南华早报、ITER、Phys.org、TechXplore、Nature、IEEE Spectrum、新科学家 |
 
@@ -168,7 +170,7 @@ BRIEFS:
 
 | 脚本 | 用途 | 关键参数 |
 |---|---|---|
-| `fetch_sources.py` | 并发 RSS+主页采集 | `<sources.json> <out_dir>`（→ fetch_results.json + sources/pN.md） |
+| `fetch_sources.py` | 并发 RSS+主页采集（有 `rsshub` 字段的源优先走 RSSHub 路由） | `<sources.json> <out_dir>`（→ fetch_results.json + sources/pN.md） |
 | `parse_demand.py` | 读 build 输出 + demand.json → 健康报告 | `<build.log> [--log x.log] [--demand demand.json]` |
 | `supply.py` | 按需求匹配素材（主条全文优先；agent 改写标注；可选 rewrite_fn） | `<demand.json> <fetch_results.json> <sources.json> <out_dir>` |
 | `rewrite.py` | 可选 headless 只压缩改写（Claude API） | `<summary> <min_words> <max_words> [--source X] [--title Y]` |
@@ -178,6 +180,7 @@ BRIEFS:
 ## 依赖
 
 - **Linotype**（`~/news/latex` 或 [linotype 仓库](https://github.com/8cli/linotype)）——排版引擎，需支持 `--demand`（build.py ≥ 2026-08-05）
+- **RSSHub**（可选，推荐）——本机 Docker 实例，服务带 `rsshub` 字段的信源（当前 OpenAI、Anthropic）：`docker run -d --name rsshub --restart unless-stopped -p 1200:1200 -v rsshub-data:/app/data diygod/rsshub`。采集时优先走 RSSHub 路由（社区维护的精确解析），返回空自动回退原主页直抓
 - **Python 3.10+**（采集/成版仅标准库）
 - **agent**（常规场景）按 SKILL.md 规则执行改写；headless cron 自动化则用可选兜底 `rewrite.py`（需 `anthropic` + `ANTHROPIC_API_KEY`，可降级 Claude CLI）
 - **xelatex**（TeX Live）——经 Linotype
@@ -202,7 +205,7 @@ BRIEFS:
 - **只压缩不扩写**：短于词数上限的素材原样使用（绝不扩写）——全文抓取（2026-08-05）已让主条有真实全文可压缩；剩余缺口是信源真实稀缺，诚实报告
 - **agent 执行改写**：主路径压缩需要 agent 在控制端（skill 的正常场景）；headless cron 自动化用可选兜底 `rewrite.py`（`anthropic` + API key 或 Claude CLI）
 - **无图文混排**：图片处理沿用 Linotype 的 `\photo`（版顶/版间图）
-- **信源波动**：部分源限流（Blue Origin 429、Microsoft 403 瞬态）；失败记录并跳过，不致命
+- **信源波动**：部分源限流（Blue Origin 429、Microsoft 403 瞬态）；失败记录并跳过，不致命。有 RSSHub 路由的源（OpenAI、Anthropic）优先走路由，直抓兜底
 - **残余抓取垃圾 / 题材泄漏**：主页抓取的导航文本或综合中国新闻（政治稿）可能绕过自动过滤——审料门是设计上的兜底；逐源解析规则与更强的题材信号是扩展点
 - **简讯槽位上限 3 条/版**：仅靠补简讯无法结构性收敛版面（约 3 简讯 + 2 主条封顶）；更大缺口需要主条升级（全文已供主条）或接受诚实稀疏版面
 

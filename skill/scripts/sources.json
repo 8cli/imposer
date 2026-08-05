@@ -21,8 +21,8 @@
   ],
   "P2": [
     {"name": "Google", "url": "https://blog.google/", "kind": "company", "mode": "page"},
-    {"name": "OpenAI", "url": "https://openai.com/news/", "kind": "company", "mode": "page"},
-    {"name": "Anthropic", "url": "https://www.anthropic.com/news", "kind": "company", "mode": "page"},
+    {"name": "OpenAI", "url": "https://openai.com/news/", "kind": "company", "mode": "page", "rsshub": "/openai/news"},
+    {"name": "Anthropic", "url": "https://www.anthropic.com/news", "kind": "company", "mode": "page", "rsshub": "/anthropic/news"},
     {"name": "NVIDIA", "url": "https://nvidianews.nvidia.com/", "kind": "company", "mode": "page"},
     {"name": "xAI", "url": "https://x.ai/news", "kind": "company", "mode": "page"},
     {"name": "Cloudflare", "url": "https://blog.cloudflare.com/rss/", "kind": "company", "mode": "rss"},

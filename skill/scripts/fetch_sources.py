@@ -19,6 +19,11 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chr
 TIMEOUT = 8
 SUMMARY_TOP_N = 2   # fetch_page 只对前 N 条候选抓首段摘要（控请求数，防整轮超时）
 
+# RSSHub 本机持久化部署（2026-08-05 用户决策，docker: diygod/rsshub @ :1200）
+# 有 "rsshub" 字段的 page 源优先走 RSSHub 路由（社区维护的精确解析），
+# 失败/为空自动回退原主页直抓——RSSHub 是稳定性补强，不是替换。
+RSSHUB_BASE = "http://localhost:1200"
+
 # ---- 审料门前置过滤（终审 I-5）：URL 合法性 + 明显非文章链接 ----
 # 路径标记：命中即视为导航/列表/多媒体页而非文章页
 NON_ARTICLE_URL_MARKERS = (
@@ -296,7 +301,14 @@ def fetch_all(sources: dict, out_dir: Path, max_workers: int = 8) -> dict:
 
     def run(plate: str, src: dict) -> tuple:
         try:
-            news = fetch_rss(src) if src["mode"] == "rss" else fetch_page(src)
+            if src.get("rsshub"):
+                # RSSHub 路由优先；空/失败回退原主页直抓（RSSHub 是补强不是单点）
+                news = fetch_rss({**src, "url": RSSHUB_BASE + src["rsshub"], "mode": "rss"})
+                if not news:
+                    print(f"  ⚠️ {src['name']} RSSHub 空 → 回退主页直抓")
+                    news = fetch_page(src)
+            else:
+                news = fetch_rss(src) if src["mode"] == "rss" else fetch_page(src)
             for n in news:
                 n["plate"] = plate
                 n["source"] = src["name"]
