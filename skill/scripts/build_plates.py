@@ -35,6 +35,17 @@ TOPIC_TO_PLATE = {"world/military": 1, "ai/tech": 2, "space": 3, "china-tech": 4
 # 时效过滤（终审 I-3）：date 字段存在且超过此天数 → 过期素材（如 RSS 里的 2017 归档稿）
 MAX_STALE_DAYS = 30
 
+# 主条最低词数（终审 C-1c）：短稿（如 38 词供给简讯）不拿主条头条。
+# 素材用尽（版内无 ≥MIN_MAIN_WORDS 词的素材）时回退全池最优——宁缺毋滥的边界。
+MIN_MAIN_WORDS = 100
+
+# URL 日期路径兜底（终审 I-3）：China Daily 综合 RSS 部分条目 date 为空，
+# 但 URL 携带归档路径 —— /a/201712/12/（YYYYMM/DD）、/page/202608/（YYYYMM）、
+# /2026/08/、/2026/08/05/（YYYY/MM[/DD]）
+_URL_DATE_RE1 = re.compile(r"/(\d{4})(\d{2})(?:/(\d{2}))?(?=/|\.|\?|$)")
+_URL_DATE_RE2 = re.compile(r"/(\d{4})/(\d{2})(?:/(\d{2}))?(?=/|\.|\?|$)")
+_YEAR_TOKEN_RE = re.compile(r"\b(?:19\d{2}|20\d{2})\b")
+
 # 题材负向关键词（终审 I-4 轻量实现）：标题命中即与版块题材明显不相关 → 降权
 # （P1 题材广不设负向词；P3/P4 共用的 China Daily 综合 RSS 会泄漏纪念/体育类稿件）
 TOPIC_OFF_KEYWORDS = {
@@ -79,13 +90,55 @@ def _parse_date(s: str) -> datetime | None:
         return None
 
 
+def _url_date(item: dict) -> datetime | None:
+    """从 URL 路径提取发布日期（date 为空时的兜底，终审 I-3）。
+
+    覆盖：China Daily `/a/201712/12/WS…`（YYYYMM/DD）、Global Times
+    `/page/202608/…`（YYYYMM，日默认 1）、以及 `/2026/08/`、`/2026/08/05/`。
+    提取失败/无日期路径 → None（不误判）。
+    """
+    url = item.get("url", "")
+    for rex in (_URL_DATE_RE1, _URL_DATE_RE2):
+        m = rex.search(url)
+        if not m:
+            continue
+        parts = [int(g) for g in m.groups() if g]
+        try:
+            return datetime(parts[0], parts[1],
+                            parts[2] if len(parts) > 2 else 1,
+                            tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _title_reports_old_year(title: str) -> bool:
+    """标题含明显旧年份（比当前年早 ≥2 年）→ 保守排除的辅助信号。
+
+    仅用于 date 空 + URL 无日期路径的条目（终审 I-3 兜底第 2 层）：
+    无任何日期信号的条目若标题自述旧年份（如 "2017 trade pact"），
+    视为综合 RSS 泄漏的归档稿。真实时间戳（"1900 GMT"）在标题中极罕见，
+    摘要中的时间不进此检查（避免 1900 GMT 类误判）。
+    """
+    now_year = datetime.now(timezone.utc).year
+    return any(y <= now_year - 2 for y in
+               (int(y) for y in _YEAR_TOKEN_RE.findall(title or "")))
+
+
 def is_stale(item: dict, max_age_days: int = MAX_STALE_DAYS) -> bool:
-    """时效过滤：date 字段存在且明显过期（> max_age_days）→ True（排除/降权）；
-    无 date 字段（page 源、无 pubDate 的 RSS）→ False（保留，RSS 通常有日期）。"""
+    """时效过滤（终审 I-3 三层兜底）：
+
+    1. date 字段存在且明显过期（> max_age_days）→ 排除；
+    2. date 为空 → URL 日期路径兜底（`/201712/12/` 等，同标准）→ 排除；
+    3. date 空且 URL 无日期路径 → 标题含明显旧年份的保守排除；
+       其余真无日期信号的条目保留（RSS 通常有日期，审料门兜底）。
+    """
     dt = _parse_date(item.get("date", ""))
     if dt is None:
-        return False
-    return datetime.now(timezone.utc) - dt > timedelta(days=max_age_days)
+        dt = _url_date(item)
+    if dt is not None:
+        return datetime.now(timezone.utc) - dt > timedelta(days=max_age_days)
+    return _title_reports_old_year(item.get("title", ""))
 
 
 def _topic_penalty(title: str, plate: int) -> int:
@@ -108,42 +161,77 @@ def _dedup(items: list[dict]) -> list[dict]:
     return out
 
 
-def _supply_priority(item: dict, slot: str) -> int:
-    """按单供给优先（终审 C-1c）：已按单供给（used=True）且规格匹配该槽位的素材优先入选。
+def _supply_tier(item: dict, slot: str) -> int:
+    """按单供给槽位优先（终审 C-1c 加固，3 层）——槽位匹配优先于 kind_rank：
+
+      0 = 按单供给（used=True）+ 槽位匹配 + 词数已在需求区间内（达标填充）
+      1 = 按单供给 + 槽位匹配（词数未达标，按距 target 最近者优先）
+      2 = 未供给 / 槽位不匹配（中性，与未供给素材同等对待）
 
     slot: 'main'（目标 ≥200 词）或 'brief'（目标 <200 词）——用 request.words
-    判断供给时的目标槽位。used 但槽位不匹配的素材与未供给素材同等对待
-    （宁缺勿滥：供给的 60 词简讯不抢占主条，反之亦然）。
+    判断供给时的目标槽位。原 2 层机制（0/1）在层内仍由 kind_rank 决定，导致
+    供给的 NASA 简讯被同层 china-official 素材（亲中权重 0）压掉、进不了
+    p3.md 简讯槽——3 层 + 距离轴修复此问题（见 _length_key）。
     """
     req = item.get("request") or {}
-    target_max = (req.get("words") or [0, 0])[1]
-    spec_match = bool(req) and ((slot == "main" and target_max >= 200)
-                                or (slot == "brief" and target_max < 200))
-    return 0 if (item.get("used") and spec_match) else 1
+    words = req.get("words") or [0, 0]
+    spec_match = bool(req) and ((slot == "main" and words[1] >= 200)
+                                or (slot == "brief" and words[1] < 200))
+    if not (item.get("used") and spec_match):
+        return 2
+    w = len(item.get("summary", "").split())
+    return 0 if words[0] <= w <= words[1] else 1
+
+
+def _length_key(item: dict, slot: str) -> float:
+    """排序长度轴（终审 C-1c）：槽位匹配的供给素材按与 target 的距离（达标先），
+    其余按词数（主条长者先 -w、简讯短者先 +w）。
+
+    距离轴先于 kind_rank：56 词的 NASA 供给简讯（距 [60,90] 中值 19）优先于
+    33 词的 china-official 素材（距 41）——按单交付的素材真正落到目标槽位。
+    """
+    req = item.get("request") or {}
+    words = req.get("words") or [0, 0]
+    spec_match = bool(req) and ((slot == "main" and words[1] >= 200)
+                                or (slot == "brief" and words[1] < 200))
+    w = len(item.get("summary", "").split())
+    if item.get("used") and spec_match and words[1]:
+        return abs(w - (words[0] + words[1]) / 2)
+    return -w if slot == "main" else w
 
 
 def pick_main_stories(news: list[dict], n: int = 2, plate: int = 1) -> list[dict]:
-    """选 n 条中长篇主条：题材匹配 > 按单供给 > 亲中信源 > 长摘要。
+    """选 n 条中长篇主条：题材匹配 > 按单供给槽位 > 亲中信源 > 长度（达标供给/长者先）。
 
-    空摘要素材（page 源 words=0）不入选——宁缺勿滥，避免 BODY 空版；
-    非英文素材（标题或摘要）同样过滤；过期素材（date >30 天）排除（I-3）；
+    过滤：空摘要素材（page 源 words=0）不入选——宁缺勿滥，避免 BODY 空版；
+    非英文素材（标题或摘要）同样过滤；过期素材排除（I-3，含 URL 日期兜底）；
     同 URL/同标题去重（I-2）；明显与版块题材不相关的标题降权（I-4）。
+
+    主条最低词数（C-1c）：优先取 ≥MIN_MAIN_WORDS(100) 词的素材；≥100 词素材
+    不足 n 条（素材用尽）才回退全池最优补足——38 词的供给简讯不拿头条。
+    槽位匹配（tier）先于 kind_rank：供给的主条素材不被未供给素材抢位。
     """
     pool = [x for x in _dedup(news)
             if not is_stale(x)
             and x.get("summary", "").strip()
             and _is_english(x["title"] + " " + x["summary"])]
-    return sorted(pool, key=lambda x: (
+    ordered = sorted(pool, key=lambda x: (
         _topic_penalty(x["title"], plate),
-        _supply_priority(x, "main"),
+        _supply_tier(x, "main"),
         KIND_RANK.get(x["kind"], 9),
-        -len(x["summary"])))[:n]
+        _length_key(x, "main")))
+    big = [x for x in ordered if len(x["summary"].split()) >= MIN_MAIN_WORDS]
+    if len(big) >= n:
+        return big[:n]
+    return ordered[:n]  # 素材用尽：无 ≥100 词素材（宁缺毋滥边界）
 
 
 def pick_briefs(news: list[dict], exclude: set, n: int = 4, plate: int = 1) -> list[dict]:
-    """选 n 条简讯（排除主条）：题材匹配 > 按单供给 > 亲中信源 > 短摘要。
+    """选 n 条简讯（排除主条）：题材匹配 > 按单供给槽位 > 规格距离（达标供给/短者先）> 亲中信源。
 
     过滤与 pick_main_stories 一致（时效/去重/英文/空摘要）。
+    规格距离先于 kind_rank（C-1c）：供给的 NASA 简讯（56 词，距 [60,90] 中值 19）
+    不被亲中权重 0 的 china-official 素材压掉——按单交付的素材真正落到简讯槽。
     """
     pool = [x for x in _dedup(news)
             if x["url"] not in exclude
@@ -152,9 +240,9 @@ def pick_briefs(news: list[dict], exclude: set, n: int = 4, plate: int = 1) -> l
             and _is_english(x["title"] + " " + x["summary"])]
     pool.sort(key=lambda x: (
         _topic_penalty(x["title"], plate),
-        _supply_priority(x, "brief"),
-        KIND_RANK.get(x["kind"], 9),
-        len(x["summary"])))
+        _supply_tier(x, "brief"),
+        _length_key(x, "brief"),
+        KIND_RANK.get(x["kind"], 9)))
     return pool[:n]
 
 
@@ -195,10 +283,12 @@ def split_paragraphs(text: str, max_paras: int = 4) -> list[str]:
     return [p.strip() for p in paras if p.strip()][:max_paras]
 
 
-def write_plate(p: dict, idx: int) -> str:
+def write_plate(p: dict, idx: int, used_urls: list | None = None) -> str:
     """一个版 → plates/pN.md 文本（linotype 字段格式）。
 
     主条若无带摘要素材则返回 ""（宁缺勿滥，跳过该版并告警）。
+    used_urls（可选）：跨版池级去重收集器（终审 I-2）——本版实际采用的
+    主条+简讯 URL 追加于此，供 write_plates 累积成四版共享已用集合。
     字段值一律原始文本：转义（含 **bold**）由 linotype build.py 统一处理。
     """
     out = []
@@ -213,6 +303,9 @@ def write_plate(p: dict, idx: int) -> str:
         print(f"  ⚠️ 版 P{idx}: 无带摘要主条素材，跳过该版（宁缺勿滥）")
         return ""
     briefs = pick_briefs(p["news"], {x["url"] for x in main}, 4, idx)
+    if used_urls is not None:
+        used_urls.extend(x["url"] for x in main)
+        used_urls.extend(b["url"] for b in briefs)
     # 版头: P1 用 main-aside（主条 2 栏 + 侧栏），其余等宽多栏
     if idx == 1:
         out.append("LAYOUT: main-aside")
@@ -241,20 +334,32 @@ def write_plate(p: dict, idx: int) -> str:
 
 
 def write_plates(results: dict, out_dir: Path) -> None:
-    """写 <out_dir>/plates/p1.md ... p4.md（linotype build.py 消费 plates/ 目录）。"""
+    """写 <out_dir>/plates/p1.md ... p4.md（linotype build.py 消费 plates/ 目录）。
+
+    跨版去重（终审 I-2）：四版共享一个已用 URL 集合 seen——同一 URL 的素材
+    只在首个版使用，后续版跳过（换素材/跳过）。根因是 P3/P4 共用 China Daily
+    综合 RSS、P1/P4 共用 GT/Xinhua：池级去重直接从源头消除跨版重复。
+    """
     plates_dir = out_dir / "plates"
     plates_dir.mkdir(parents=True, exist_ok=True)
     plate_names = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
+    seen = set()  # 四版池级已用 URL（终审 I-2 跨版去重）
     for plate, news in results.items():
         idx = plate_names.get(plate)
         if idx is None or not news:
             print(f"  ⚠️ {plate}: 无素材，跳过")
             continue
-        text = write_plate({"news": news}, idx)
+        pool = [x for x in news if x["url"] not in seen]
+        if not pool:
+            print(f"  ⚠️ {plate}: 素材 URL 已全部被其他版使用（跨版去重），跳过")
+            continue
+        used_urls = []
+        text = write_plate({"news": pool}, idx, used_urls)
         if not text:
             continue  # write_plate 已告警（无带摘要主条）
+        seen.update(used_urls)
         (plates_dir / f"p{idx}.md").write_text(text, encoding="utf-8")
-        print(f"  ✅ plates/p{idx}.md ({len(news)} 条素材 → 2 主条 + 3 简讯)")
+        print(f"  ✅ plates/p{idx}.md ({len(pool)} 条素材 → 2 主条 + 3 简讯)")
 
 
 if __name__ == "__main__":

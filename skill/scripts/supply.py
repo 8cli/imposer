@@ -31,7 +31,7 @@ def match_cache(request: dict, cache: list[dict], used_urls: set,
 
     英文过滤：标题或摘要非英文（拉丁占比 < 85%）不匹配。
     allow_rewrite=True 时：精确规格匹配失败 → 返回最接近素材 + needs_rewrite 标注
-    （AI 改写压缩到目标词数区间——SKILL.md 编排层职责）。
+    （改写压缩到目标词数区间——agent 执行，见 SKILL.md 改写规则；rewrite.py 仅兜底）。
     """
     min_kind_rank = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
                      "china-ai": 4, "independent": 5, "tech-media": 6, "aggregator": 7,
@@ -73,8 +73,14 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
                     fetch_fn=None, allow_rewrite: bool = True, rewrite_fn=None) -> dict:
     """按 demand 供给 → {plate: [补充素材]}。fetch_fn 可注入（测试用）。
 
-    allow_rewrite=True（默认）: 精确规格匹配失败时返回最接近素材，由 rewrite_fn
-    （rewrite.py，LLM 压缩）改写压缩到目标词数区间。rewrite_fn 签名:
+    **主路径（agent 执行改写，用户决策 2026-08-05）**：rewrite_fn 默认 None——
+    近似匹配的素材保留 `needs_rewrite: true` + `target_words: [lo, hi]` 标注，
+    **agent（skill 调用方，本身即 LLM）按 SKILL.md 改写规则直接压缩回填**，
+    不再由脚本调一次 Claude API（anthropic 包/PEP 668/SSE 解析/CLI 污染等坑的绕路）。
+    标注即信号：agent 看到 needs_rewrite 就知道该改写哪条、改写到多少词。
+
+    **兜底（可选）**：rewrite_fn 传入（如 rewrite.py 的 rewrite）时在此压缩——
+    保留给 headless cron 自动化（无 agent 场景）。签名:
         rewrite_fn(summary, min_words, max_words, source, title) -> str
     铁律：只压缩不扩写——素材词数 ≤ 需求上限时原样返回（不调用 LLM）。
 

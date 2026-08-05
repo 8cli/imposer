@@ -70,7 +70,7 @@ real sources (54, concurrent 28s) → build_plates 4 plates → linotype --deman
   → P3/P4 brief deficits persist (final fill 56% / 54%) → honest stop + report
 ```
 
-**Honest statement (corrected after final review)**: the first E2E report claimed "P1 filled 59→65%+, P4 main-story deficit eliminated 48→55%" as closed-loop verification. That was wrong on three counts — (1) fill increases during autofit come from **font-scaling, not content backfill**; (2) the loop never regenerated plates after supply, so supplied stories never entered the pages; (3) used markers weren't persisted, so round 2 re-supplied round 1's stories. After the Phase 5 fixes below, the loop demonstrably backfills into plates (NASA briefs enter P3), never re-supplies a story, and honestly reports the unmet demand. The P3/P4 brief deficits persist because the brief slots are capped at 3/plate and autofit's font-scaling ceiling is reached — **not** because cache material is "exhausted" (it isn't). Directed full-article fetching (fetch_fn) is the documented extension point.
+**Honest statement (corrected after final review)**: the first E2E report claimed "P1 filled 59→65%+, P4 main-story deficit eliminated 48→55%" as closed-loop verification. That was wrong on three counts — (1) fill increases during autofit come from **font-scaling, not content backfill**; (2) the loop never regenerated plates after supply, so supplied stories never entered the pages; (3) used markers weren't persisted, so round 2 re-supplied round 1's stories. After the Phase 5 fixes, the loop re-runs build_plates and persists used markers. **Phase 6 correction — the Phase 5 "NASA briefs enter P3" evidence was itself wrong**: the actual 2026-08-05 artifact's p3.md briefs were China Daily 2017 archives + JAXA + CNSA, not NASA — the slot-matching priority stopped at `kind_rank`, which let china-official (rank 0) squeeze out the supplied NASA agency items; and the P3/P4 headlines were the 2017-12-12 "Taiwan's New Party" archive whose empty `date` field bypassed `is_stale`. All corrected in Phase 6 (see below). The P3/P4 brief deficits persist structurally (brief slots cap at 3/plate); directed full-article fetching (fetch_fn) is the documented extension point.
 
 ## Phase 5 — Final review (2 Critical + 6 Important), one fix wave
 
@@ -80,17 +80,37 @@ Whole-project review found the closed loop could not converge and the docs over-
 |---|---|
 | C-1a loop never re-ran build_plates | SKILL.md loop calls `build_plates.py` every round before re-typesetting |
 | C-1b used marker not persisted | `supply_requests` marks items `used=True` (+ attaches `request`) in place; cache backfill persists it — round 2 never re-supplies the same URL (verified: all supplied URLs unique) |
-| C-1c supplied stories never entered plates | `pick_main_stories`/`pick_briefs` prefer slot-matching supplied items (used + request.words), after topic penalty; `_dedup` keeps the annotated original |
+| C-1c supplied stories never entered plates | `pick_main_stories`/`pick_briefs` prefer slot-matching supplied items (used + request.words), after topic penalty; `_dedup` keeps the annotated original. **Phase 6 correction**: the first attempt (2-level priority) still let `kind_rank` decide *within* the slot-matched tier, so the actual 2026-08-05 artifact had China Daily 2017 archives — not the supplied NASA items — in p3.md briefs. Fixed in Phase 6 with a 3-tier slot priority + target-distance axis + main-word-count gate |
 | C-1d silent loop exit | loop ends with an honest report listing every unmet demand (≤2-round stop) |
 | C-2 docs over-claimed convergence | README×2 + this file rewritten to the honest, reproducible account above |
 | I-1 overfull detection missed 3 patterns | parse_demand matches all 4 linotype.cls patterns (`plate: content` / `main column` / `aside column` / `mainstory`) — a real 6pt `Overfull mainstory` on P1 is now caught |
-| I-2 no story-level dedup | fetch_rss + fetch_page dedup by URL+title; pick_* dedup pools (verified: no duplicate headline/brief in any plate) |
-| I-3 no recency filter | `is_stale` (>30 days) excludes archive stories in build_plates + supply; date-less items kept |
+| I-2 no story-level dedup | fetch_rss + fetch_page dedup by URL+title; pick_* dedup pools (verified: no duplicate headline/brief in any plate). **Phase 6 correction**: intra-plate dedup left cross-plate duplicates — the same 2017 China Daily URLs were headlines in both P3 and P4. Fixed in Phase 6 with a four-plate pool-level used-URL set |
+| I-3 no recency filter | `is_stale` (>30 days) excludes archive stories in build_plates + supply; date-less items kept. **Phase 6 correction**: `is_stale` only fired on a `date` field; China Daily's comprehensive RSS emits items with an empty `date` (the 2017-12-12 archive became P3/P4 headlines). Fixed in Phase 6 with a URL-date-path fallback (`/201712/12/`) + conservative title-year exclusion |
 | I-4 topic unused end-to-end | topic → plate map; title keyword penalty in build_plates (deprioritize + record) and supply (hard skip); residual general-China leaks (e.g. cross-strait politics in P4) are documented as a lightweight-filter limitation caught by the review gate |
 | I-5 no review gate | SKILL.md/README 审料门 section (5 checks before composing); fetch_page URL/title/paragraph junk filters (`javascript:`, beian.miit.gov.cn, `/about` `/podcast` `/multimedia`, "Skip to…", "opens in a new window", email-titles, "File photo" captions) |
 | I-6 rewrite untested + crash-prone | `test_rewrite.py` (5 tests, injected `_call_anthropic`); `supply_requests` wraps rewrite_fn in try/except — failure keeps original + warning (no whole-round abort) |
 
 Verified end-to-end on real sources: fetch → build → typeset → loop (2 rounds) → honest report; regression 38/38 green.
+
+## Phase 6 — Agent-executed rewrite architecture + final-review hard fixes (2026-08-05)
+
+Three hard findings survived the final review, plus a user decision that replaces the LLM-rewrite path:
+
+**User decision — agent executes the rewrite (architecture change).** Imposer is a skill; the skill is invoked by an agent, and the agent *is* an LLM. Rewriting should therefore be done by the agent directly, not by `rewrite.py` calling the Claude API again (that path accumulated anthropic-package / PEP 668 / SSE-parsing / CLI-contamination issues and was a detour). Changes:
+- `SKILL.md` closed loop is now a described **agent-executed procedure** (supply → agent compresses per the rewrite-rules chapter → backfill → build_plates → re-typeset → re-read demand), no Python heredoc.
+- A complete **rewrite-rules chapter** (compress-only iron rule, hard `target_words` cap, attribution preserved, lead preserved, plain text output) tells the agent exactly how to compress.
+- `supply.py` keeps `rewrite_fn=None` as the default: approximate matches keep `needs_rewrite: true` + `target_words` markers — the signal telling the agent which items to rewrite and to what word count.
+- `rewrite.py` is demoted to an **optional fallback** for headless cron automation (no agent); the docs mark it as such.
+
+**I-3 (recency) — the 2017 archive still reached the plates.** Root cause: `is_stale` only fired when a `date` field existed; China Daily's comprehensive RSS emits items with an empty `date`, so the 2017-12-12 archive (`/201712/12/` in the URL) became the P3 and P4 headlines. Fix: URL-date-path fallback (`/a/201712/12/`, `/page/202608/`, `/2026/08/[05]/`) when `date` is empty, plus a conservative title-year exclusion for items with no date signal at all. Verified: 0 archive URLs in any regenerated plate.
+
+**I-2 (dedup) — duplicates were intra-plate only.** The same 2017 China Daily URLs were headlines in *both* P3 and P4 (P3/P4 share the China Daily comprehensive RSS; P1/P4 share GT/Xinhua). Fix: `write_plates` keeps a four-plate pool-level used-URL set — a URL is used only by the first plate that picks it; later plates skip it or substitute. Verified: 0 cross-plate duplicate URLs across the 24 URLs used in the four regenerated plates.
+
+**C-1c (supply slot priority) — supplied NASA briefs still lost the slot.** Root cause: the 2-level slot priority put slot-matched supplied items in one tier, then let `kind_rank` decide *within* it — china-official (rank 0) squeezed out supplied NASA agency items, so p3.md briefs were China Daily/JAXA/CNSA, not NASA. Fix: 3-tier priority (on-spec supplied → nearest-to-target supplied → neutral) plus a target-distance axis that outranks `kind_rank` in brief selection, and a `MIN_MAIN_WORDS = 100` gate so a 38-word supplied brief never takes a main headline (fallback to the best available pool only when no ≥100-word material exists). Verified on the real cache: p3.md briefs are now the supplied NASA items ("Advanced Mini-laboratories…", "NASA Will Attempt…", "NASA's PUNCH…").
+
+**Honest docs.** README×2 / ARCHITECTURE / this file corrected: the previous "14 unique supplied URLs", "P3 briefs = 3 NASA items", "2017 archive no longer in plates", and "60-word brief never steals a main slot" claims did not match the actual artifact (real counts: P3 12 / P4 10 unique supplied URLs; old p3.md briefs were China Daily + JAXA + CNSA; old P3/P4 headlines were the 2017 archive; the 38-word archive brief *was* the headline). All claims below are re-checked against regenerated output.
+
+Regression: 44/44 green (fetch 8 / demand 4 / supply 10 / build_plates 17 / rewrite 5).
 
 ## Bug log (chronological)
 
@@ -120,14 +140,19 @@ Verified end-to-end on real sources: fetch → build → typeset → loop (2 rou
 | 22 | P4 headline was a memorial story | I-4: topic field unused end-to-end | topic→plate keyword penalty + record |
 | 23 | nav/podcast/ICP junk reached plates | I-5: no review gate, no URL legality filter | 审料门 + URL/title/paragraph junk filters |
 | 24 | rewrite failure aborted whole supply round | I-6: rewrite_fn called without try/except | try/except keep original + warning |
+| 25 | 2017 archive still P3/P4 headline | I-3 phase-6: `is_stale` only fired on `date`; empty-date archive (URL `/201712/12/`) bypassed it | URL-date-path fallback + conservative title-year exclusion (build_plates + supply) |
+| 26 | same 2017 URLs in P3 *and* P4 | I-2 phase-6: dedup was intra-plate only; P3/P4 share China Daily RSS | four-plate pool-level used-URL set in write_plates |
+| 27 | supplied NASA briefs still lost p3.md slot | C-1c phase-6: 2-level priority then `kind_rank` decided within tier — china-official 0 squeezed out agency 2 | 3-tier priority + target-distance axis (briefs) + MIN_MAIN_WORDS=100 gate (mains) |
+| 28 | 38-word supplied brief was P3/P4 headline | C-1c phase-6: no main word-count gate | ≥100-word primary pool; fallback only when material exhausted |
+| 29 | fix report claimed "P3 briefs = NASA, 14 unique supplied" | C-2 phase-6: claims not checked against artifact | docs re-verified against regenerated output (real: P3 12 / P4 10 unique supplied URLs) |
 
 ## What survives
 
-- **38 regression tests** → `tests/run_tests.py` (fetch 8 / demand 4 / supply 8 / build_plates 13 / rewrite 5)
+- **44 regression tests** → `tests/run_tests.py` (fetch 8 / demand 4 / supply 10 / build_plates 17 / rewrite 5)
 - **Demand-supply protocol** → linotype `--demand` (25/25 regression intact) + `demand.json` schema
-- **Compress-only iron rule** → `rewrite.py` (user decision, mechanically enforced)
-- **Closed-loop mechanics** → build_plates regeneration + used persistence + slot-matching priority + honest stop, verified E2E on real sources
+- **Compress-only iron rule** → agent-executed rewrite (SKILL.md 改写规则 chapter, user decision); `rewrite.py` kept as optional headless fallback
+- **Closed-loop mechanics** → build_plates regeneration + used persistence + 3-tier slot priority + main-word gate + pool-level cross-plate dedup + honest stop, verified E2E on the real 2026-08-05 cache
 - **Review gate** → SKILL.md/README 审料门 (human master switch over the automatic filters)
 - **Every measurement above is reproducible** — run the scripts on the examples or the E2E daily.
 
-The design debt we chose to accept: compress-only (no expansion means underfilled plates may persist), rewrite needs LLM, and directed full-article fetching is the natural next step.
+The design debt we chose to accept: compress-only (no expansion means underfilled plates may persist), agent-executed rewrite requires an agent (headless runs use `rewrite.py` + LLM), and directed full-article fetching is the natural next step.

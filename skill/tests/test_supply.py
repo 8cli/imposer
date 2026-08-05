@@ -83,6 +83,22 @@ def test_match_cache_skips_stale():
     check(item2 is None, "只剩归档稿时不应供给")
 
 
+def test_match_cache_skips_stale_via_url_date():
+    """终审 I-3 加固：date 为空的 2017 归档稿（China Daily URL 日期路径）同样不供给。"""
+    req = {"words": [60, 90], "min_kind": "china-official"}
+    cache = [
+        {"title": "Archive no-date", "url": "http://www.chinadaily.com.cn/a/201712/12/WS5a2f23eba3108bc8c67219f0.html",
+         "summary": "word " * 70, "source": "China Daily", "kind": "china-official", "date": ""},
+        {"title": "Fresh no-date", "url": "https://www.globaltimes.cn/page/202608/1367571.shtml",
+         "summary": "word " * 70, "source": "GT", "kind": "china-official", "date": ""},
+    ]
+    item = sp.match_cache(req, cache, set())
+    check(item is not None and item["title"] == "Fresh no-date",
+          f"应跳过 date 空但 URL 是 2017 归档的条目，实际 {item and item['title']!r}")
+    item2 = sp.match_cache(req, [cache[0]], set())
+    check(item2 is None, "只剩 URL 归档条目时不应供给")
+
+
 def test_match_cache_filters_off_topic():
     """终审 I-4：demand 的 topic 端到端生效——明显不相关标题（如 P4 纪念稿）不补稿。"""
     req = {"words": [60, 90], "min_kind": "china-official", "topic": "china-tech"}
@@ -120,6 +136,22 @@ def test_supply_marks_used_persistent():
     r2 = sp.supply_requests(demand, cache, {}, Path("."))
     urls2 = [i["url"] for i in r2["P2"]]
     check(urls2 == ["https://e.com/3"], f"第 2 轮应供给新素材 e.com/3，实际 {urls2}")
+
+
+def test_supply_agent_path_keeps_rewrite_markers():
+    """任务一：agent 执行改写为主路径——rewrite_fn 默认 None（不传），
+    needs_rewrite + target_words 标注保留，作为 agent 知道"改哪条、改到多少词"的信号。"""
+    demand = {"plates": {"P3": {"requests": [
+        {"type": "brief", "count": 1, "words": [250, 400], "topic": "space", "min_kind": "agency"}]}}}
+    cache = {"P3": [{"title": "Short NASA item", "url": "https://e.com/ns1", "summary": "word " * 60,
+                     "source": "NASA", "kind": "agency"}]}
+    results = sp.supply_requests(demand, cache, {}, Path("."))  # rewrite_fn=None（agent 路径）
+    item = results["P3"][0]
+    check(item.get("needs_rewrite") is True,
+          f"agent 路径应保留 needs_rewrite 标注，实际 {item.get('needs_rewrite')}")
+    check(item.get("target_words") == [250, 400],
+          f"target_words 应保留供 agent 改写，实际 {item.get('target_words')}")
+    check(item.get("used") is True, "供给素材仍应标记 used（防重复供给）")
 
 
 def test_supply_rewrite_failure_keeps_original():
@@ -188,12 +220,14 @@ def main():
     test_match_cache_filters_off_topic()
     test_supply_marks_used_persistent()
     test_supply_rewrite_failure_keeps_original()
+    test_supply_agent_path_keeps_rewrite_markers()
+    test_match_cache_skips_stale_via_url_date()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print("ALL TESTS PASSED (8 tests)")
+    print("ALL TESTS PASSED (10 tests)")
 
 
 if __name__ == "__main__":

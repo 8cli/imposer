@@ -162,6 +162,87 @@ def test_recency_filters_stale():
           f"新稿与无日期稿应保留：{titles}")
 
 
+def test_is_stale_url_date_fallback():
+    """终审 I-3 加固：date 为空 → URL 日期路径兜底（/201712/12/ 过期、
+    /202608/ 与 /2026/08/05/ 新鲜）；无日期信号 → 标题旧年份保守排除，否则保留。"""
+    cases = [
+        # (item, expected_stale, 说明)
+        ({"title": "T", "url": "http://www.chinadaily.com.cn/a/201712/12/WS5a2f2514a3108bc8c67219fb.html", "date": ""},
+         True, "China Daily 2017 归档 URL 应判过期"),
+        ({"title": "T", "url": "https://www.globaltimes.cn/page/202608/1367571.shtml", "date": ""},
+         False, "Global Times 2026-08 URL 应新鲜"),
+        ({"title": "T", "url": "http://www.chinadaily.com.cn/a/2026/08/05/WSxxx.html", "date": ""},
+         False, "2026-08-05 URL 应新鲜"),
+        ({"title": "T", "url": "https://www.nasa.gov/news/1234", "date": ""},
+         False, "无日期路径 → 保守保留"),
+        ({"title": "2017 trade pact revisited", "url": "https://e.com/x", "date": ""},
+         True, "标题自述旧年份 → 保守排除"),
+        ({"title": "Fresh no-date story", "url": "https://e.com/y", "date": ""},
+         False, "标题无旧年份 → 保留"),
+        ({"title": "T", "url": "https://e.com/z", "date": "Tue, 04 Aug 2026 20:00:14 GMT"},
+         False, "date 存在且新鲜 → 保留"),
+    ]
+    for item, expected, msg in cases:
+        check(bp.is_stale(item) == expected, f"is_stale {msg}：实际 {bp.is_stale(item)}")
+
+
+def test_cross_plate_dedup():
+    """终审 I-2 加固：同一 URL 出现在多版缓存时只在首个版使用（四版池级去重）。"""
+    shared = {"title": "Shared GT story", "url": "https://gt.com/shared", "summary": "word " * 40,
+              "author": "", "source": "GT", "kind": "china-official"}
+    alt = {"title": "P4 alternative", "url": "https://p4.com/alt", "summary": "word " * 45,
+           "author": "", "source": "SCMP", "kind": "independent"}
+    results = {"P1": [dict(shared)], "P4": [dict(shared), dict(alt)]}
+    with tempfile.TemporaryDirectory() as td:
+        bp.write_plates(results, Path(td))
+        p1 = (Path(td) / "plates" / "p1.md").read_text(encoding="utf-8")
+        p4 = (Path(td) / "plates" / "p4.md").read_text(encoding="utf-8")
+        check("Shared GT story" in p1, "P1 应使用共享 URL 素材（首个版）")
+        check("Shared GT story" not in p4, f"P4 不应重复使用共享 URL（换素材）：{p4[:120]!r}")
+        check("P4 alternative" in p4, "P4 应换用替代素材")
+        # 全被占用 → 该版跳过
+        results2 = {"P1": [dict(shared)], "P4": [dict(shared)]}
+        with tempfile.TemporaryDirectory() as td2:
+            bp.write_plates(results2, Path(td2))
+            check(not (Path(td2) / "plates" / "p4.md").exists(),
+                  "P4 无替代素材时应跳过该版（宁缺勿滥）")
+
+
+def test_main_min_words_gate():
+    """终审 C-1c：≥100 词素材存在时，38 词供给简讯不拿主条头条；素材用尽才回退。"""
+    short_supplied = {"title": "Supplied 38-word brief", "url": "https://e.com/s1",
+                      "summary": "word " * 38, "author": "", "source": "GT", "kind": "china-official",
+                      "used": True, "request": {"type": "brief", "words": [60, 90], "topic": "space"}}
+    long_unsupplied = {"title": "Long unsupplied story", "url": "https://e.com/l1",
+                       "summary": "word " * 150, "author": "", "source": "NASA", "kind": "agency"}
+    mains = bp.pick_main_stories([short_supplied, long_unsupplied], 1, plate=3)
+    check(mains[0]["title"] == "Long unsupplied story",
+          f"≥100 词素材存在时短稿不应拿主条：{mains[0]['title']!r}")
+    check(len(mains[0]["summary"].split()) >= bp.MIN_MAIN_WORDS,
+          f"主条应 ≥{bp.MIN_MAIN_WORDS} 词：{len(mains[0]['summary'].split())}")
+    # 素材用尽（全部 <100 词）→ 回退全池最优（宁缺毋滥边界，不跳过该版）
+    all_short = [short_supplied]
+    mains2 = bp.pick_main_stories(all_short, 1, plate=3)
+    check(len(mains2) == 1 and mains2[0]["title"] == "Supplied 38-word brief",
+          "素材用尽时应回退全池最优（不空版）")
+
+
+def test_pick_briefs_nasa_beats_china_official():
+    """终审 C-1c 加固：同槽位供给素材按规格距离优先——56 词 NASA 简讯
+    不被亲中权重 0 的 china-official 素材压掉（此前 kind_rank 决定导致 NASA 进不了简讯槽）。"""
+    news = [
+        {"title": "Supplied China Daily brief", "url": "https://e.com/cd1", "summary": "word " * 33,
+         "author": "", "source": "China Daily", "kind": "china-official", "used": True,
+         "request": {"type": "brief", "words": [60, 90], "topic": "space"}},
+        {"title": "Supplied NASA brief", "url": "https://e.com/n1", "summary": "word " * 56,
+         "author": "", "source": "NASA", "kind": "agency", "used": True,
+         "request": {"type": "brief", "words": [60, 90], "topic": "space"}},
+    ]
+    briefs = bp.pick_briefs(news, set(), 2, plate=3)
+    check(briefs[0]["title"] == "Supplied NASA brief",
+          f"NASA 供给简讯应按规格距离优先于 china-official：{[b['title'][:30] for b in briefs]}")
+
+
 def test_topic_penalty_deprioritizes_off_topic():
     """终审 I-4：标题明显与版块题材不相关（如 P4 纪念稿）→ 降权到题材匹配素材之后。"""
     news = [
@@ -204,12 +285,16 @@ def main():
     test_dedup_same_url_and_title()
     test_recency_filters_stale()
     test_topic_penalty_deprioritizes_off_topic()
+    test_is_stale_url_date_fallback()
+    test_cross_plate_dedup()
+    test_main_min_words_gate()
+    test_pick_briefs_nasa_beats_china_official()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({13} tests)")
+    print(f"ALL TESTS PASSED ({17} tests)")
 
 
 if __name__ == "__main__":

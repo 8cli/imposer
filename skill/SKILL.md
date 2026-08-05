@@ -30,61 +30,67 @@ cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
   --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --visual --demand > $DAILY/build.log 2>&1 && cd -
 # 5. 读需求 → 版面健康报告 + 补稿单
 python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
-# 6. 需求-供给闭环：按单补稿 → LLM 压缩改写（只压缩不扩写）→ 回填 → 重新成版 → 重排
+# 6. 需求-供给闭环（agent 执行改写——主路径）→ 见下节"闭环循环（agent 执行）"
 #    直到 linotype 返回"已填满"（demand.json 无需求或 ≤2 轮上限）。
-#    铁律：每轮 supply 后必须重跑 build_plates.py 重新成版——否则 plates 不更新、
-#    demand.json 永不变化，循环空转（终审 C-1a）。supply 输出带 used=True 标记，
-#    回写缓存即持久化，第 2 轮不会重复供给同一批素材（终审 C-1b）。
-python3 - <<'PYEOF'
-import json, subprocess
-from pathlib import Path
-import sys
-SKILL = Path.home() / ".claude/skills/imposer/scripts"
-DAILY = Path.home() / "news/daily" / subprocess.run(["date", "+%F"], capture_output=True, text=True).stdout.strip()
-sys.path.insert(0, str(SKILL))
-import supply, rewrite
+```
 
-def build_plates():
-    subprocess.run(["python3", str(SKILL / "build_plates.py"), str(DAILY / "fetch_results.json"), str(DAILY)],
-                   capture_output=True)
+## 闭环循环（agent 执行改写——主路径）
 
-def typeset():
-    r = subprocess.run(["python3", "build.py", str(DAILY / "plates"), str(DAILY / "out.tex"),
-                        "--docopts", "paper=a3,landscape,columns=3,plates=2,fill_min=0.65", "--demand"],
-                       cwd=str(Path.home() / "news/latex"), capture_output=True)
-    (DAILY / "build.log").write_bytes(r.stdout + r.stderr)  # 供 parse_demand.py 重读
-    return r.returncode
+**架构决策（2026-08-05）**：imposer 是 skill，skill 由 agent 调用——**agent 本身就是 LLM**，
+改写应由 agent 直接执行，而不是脚本再调一次 Claude API（那条路踩了 anthropic 包/PEP 668/
+SSE 解析/CLI 污染一堆坑，且是绕路）。`supply.py` 输出 `needs_rewrite` 素材清单（含
+`target_words`），agent 按下述改写规则直接压缩回填。`rewrite.py` 降级为可选兜底
+（headless cron 自动化备胎），主路径不再依赖它的 API 调用。
 
-unmet = None  # 未满足需求（诚实报告的载体）
-for round_no in range(1, 3):  # ≤2 轮防死循环
-    demand = json.load(open(DAILY / "demand.json")) if (DAILY / "demand.json").exists() else {"plates": {}}
-    if not demand.get("plates"):
-        print(f"✅ 第 {round_no-1} 轮后已填满（无需求）"); break
-    cache = json.load(open(DAILY / "fetch_results.json"))
-    sources = json.load(open(str(SKILL / "sources.json")))
-    supplied = supply.supply_requests(demand, cache, sources, DAILY, rewrite_fn=rewrite.rewrite)
-    if not any(supplied.values()):
-        print(f"⚠️ 第 {round_no} 轮无供给（素材用尽/题材不匹配），停止并报告"); unmet = demand.get("plates", {}); break
-    for plate, items in supplied.items():
-        for i in items: cache[plate].append(i)   # 携带 used=True 回写，第 2 轮不再重复供给
-    with open(DAILY / "fetch_results.json", "w") as f: json.dump(cache, f, ensure_ascii=False, indent=2)
-    print(f"🔄 第 {round_no} 轮补稿 {sum(len(v) for v in supplied.values())} 条 → 重新成版 → 重排")
-    build_plates()                                # 关键：先重新成版，plates 才反映补稿
-    if typeset() != 0:
-        print(f"  ⚠️ 重排失败（见 {DAILY}/build.log），停止并报告"); unmet = demand.get("plates", {}); break
-else:
-    # 2 轮跑完仍未收敛 → 诚实报告，不静默退出（终审 C-1d）
-    unmet = json.load(open(DAILY / "demand.json")).get("plates", {})
-if unmet:
-    print("⚠️ 停止并报告：以下需求在 ≤2 轮内未满足（不硬调，宁缺勿滥）")
-    for plate, info in unmet.items():
-        reqs = info.get("requests", [])
-        fill = info.get("fill")
-        fill_s = f"{fill*100:.0f}%" if isinstance(fill, (int, float)) else "?"
-        total = sum(r.get("count", 1) for r in reqs)
-        print(f"  {plate}: fill {fill_s}，{total} 条未满足（{len(reqs)} 项需求）— {reqs}")
-    print("  可定向抓取全文（supply fetch_fn）后重试，或人工接受当前版面")
-PYEOF
+每轮执行（≤2 轮防死循环；每轮必须重新成版，否则 plates 不更新、demand.json 永不变化、
+循环空转——终审 C-1a；supply 输出带 `used=True`，回写缓存即持久化，第 2 轮不会重复
+供给同一批素材——终审 C-1b）：
+
+1. **读需求**：`cat $DAILY/demand.json`。无 `plates` → 已填满，停止并报 ✅。
+2. **按单找稿**：
+   ```bash
+   python3 ~/.claude/skills/imposer/scripts/supply.py \
+     $DAILY/demand.json $DAILY/fetch_results.json \
+     ~/.claude/skills/imposer/scripts/sources.json $DAILY
+   ```
+   输出 `{plate: [素材]}`。带 `"needs_rewrite": true` + `"target_words": [lo, hi]`
+   的素材 = **需 agent 压缩改写的清单**（`used: true` 已标记）。
+3. **agent 逐条压缩**（按下方"改写规则"章节执行）：对每条 `needs_rewrite` 素材，
+   把其 `summary` 压缩到 `target_words` 硬上限内，**只压缩不扩写**；改写后替换该条
+   的 summary 字段（保留 author/source/url/date/used/request 原样）。
+4. **回填缓存**：将供给结果（含改写后的 summary）追加回 `$DAILY/fetch_results.json`
+   对应版块数组（携带 used=True，防第 2 轮重复供给）。
+5. **重新成版**：`python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY`
+   （关键步骤：先重新成版，plates 才反映补稿）。
+6. **重排 + 重读需求**：
+   ```bash
+   cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
+     --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --demand > $DAILY/build.log 2>&1 && cd -
+   python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
+   ```
+7. demand.json 仍有需求 → 回到第 1 步（≤2 轮）。
+8. **诚实报告**（终审 C-1d）：2 轮后仍未满足 → 列出每版 fill 与未满足请求
+   （count/规格/词数），不静默退出；提示可定向抓取全文（fetch_fn）或人工接受版面。
+
+## 改写规则（agent 执行时遵循——替代 rewrite.py 的 API 调用）
+
+压缩改写是**硬纪律**，逐条执行：
+
+1. **只压缩不扩写（铁律）**：素材词数 ≤ 需求上限（`target_words[1]`）时**原样返回**，
+   不调用任何 LLM；只有超长素材才压缩。**绝不新增事实、不编造来源**。
+2. **硬词数上限**：改写后词数 ≤ `target_words[1]`（硬上限，宁可少不可超）；
+   尽量落在 `[target_words[0], target_words[1]]` 区间内。
+3. **保留归属**：保留记者名（Byline）、站点名、以及 "according to Xinhua"、
+   "Reuters reported" 类归属短语——压缩可以删细节，不能丢出处。
+4. **保导语**：保留首段核心信息（who/what/where/when）。
+5. **输出纯文本**：只输出压缩后的报道文本，不加前言、不加引号、不改字段结构。
+6. **回填**：改写结果写回该条素材的 `summary` 字段。
+
+**兜底（可选，非主路径）**：`rewrite.py` 保留用于 headless cron 自动化（无 agent
+场景），铁律与上述一致，机械强制（词数硬钳制）：
+```bash
+python3 ~/.claude/skills/imposer/scripts/rewrite.py "<summary>" <min_words> <max_words> --source X --title Y
+```
 
 ## 审料门（成版前必过，终审 I-5）
 
@@ -117,7 +123,7 @@ linotype 在 `--demand` 模式下输出 `demand.json`——每版缺什么：
   {"type": "brief", "count": 2, "words": [60, 90], "topic": "space", "min_kind": "agency"}]}}}
 ```
 
-imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字数区间）× `min_kind`（最低信源层级，亲中优先）→ 缓存匹配 → 不足则**近似匹配 + AI 改写**（返回最接近素材 + `needs_rewrite` + `target_words`，由编排层 AI 改写压缩到目标词数区间）→ 生成补稿 → 重排。改写原则：忠实原文不编造事实，压缩到目标词数，保留记者名与站点归属。
+imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字数区间）× `min_kind`（最低信源层级，亲中优先）→ 缓存匹配 → 不足则**近似匹配 + agent 改写**（返回最接近素材 + `needs_rewrite` + `target_words`，**agent 按上方"改写规则"章节直接压缩**到目标词数区间）→ 生成补稿 → 重排。改写原则（铁律）：只压缩不扩写、忠实原文不编造事实、硬词数上限、保留记者名与站点归属。`rewrite.py`（Claude API 压缩）仅作 headless 自动化兜底。
 
 **规格映射**：P1 world/military · P2 ai/tech · P3 space · P4 china-tech；需求类型按缺口：`<100pt → briefs`、`100-300pt → 1 main + briefs`、`>300pt → deep_dive + briefs`。
 
@@ -130,7 +136,7 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 | autofit ❌ 边界内无法放下 | 接受 + 报告用户人工决策（不硬调） |
 | --visual ❌ 空白带 | 调配比（增/减内容）或接受 |
 
-**反馈环**：补稿 → **重新成版（build_plates）** → 重排 → 重读需求，**最多 2 轮**。仍不达标 → 停止 + 诚实报告（列出未满足需求，不静默退出）。
+**反馈环**：补稿（agent 改写）→ **重新成版（build_plates）** → 重排 → 重读需求，**最多 2 轮**。仍不达标 → 停止 + 诚实报告（列出未满足需求，不静默退出）。
 
 ## 信源与归属
 
