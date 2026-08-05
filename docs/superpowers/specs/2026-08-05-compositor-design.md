@@ -51,20 +51,29 @@ A3 横版、`plates=2` → **2 页报纸**（P1|P2 页一，P3|P4 页二），�
 | 信源 | 方式 | URL（已验证 200） |
 |---|---|---|
 | Global Times（环球时报英文版） | 主页/军事版抓取 | `globaltimes.cn` |
-| Xinhua English（新华社英文） | 主页抓取 | `english.news.cn` |
+| Xinhua English（新华社英文） | 主页抓取 | `english.news.cn/home.htm` |
 | CGTN（中国国际电视台） | RSS 订阅页 | `cgtn.com/subscribe/rss.html` |
 | Al Jazeera（非西方独立补充） | RSS | `aljazeera.com/xml/rss/all.xml` |
 | TASS（俄官方，地缘/俄乌补充） | 主页抓取 | `tass.com` |
 
 **俄乌亲中视角** = 和谈立场、反对升级、报道中国和平倡议、批评北约东扩。无需专门俄乌站。
 
-### P2 AI 与科技
+### P2 AI 与科技（含科技公司新闻）
 
-| 信源 | 方式 | URL |
+**公司官方新闻室/博客 = 一手权威**（产品发布、公司公告、技术进展），优先于第三方转载。
+
+| 信源 | 方式 | URL（已验证 200） |
 |---|---|---|
+| Google（官方博客） | 主页抓取 | `blog.google` |
+| OpenAI（新闻室） | 主页抓取 | `openai.com/news/` |
+| Cloudflare（官方博客） | RSS | `blog.cloudflare.com/rss/` |
+| Anthropic（新闻室） | 主页抓取 | `anthropic.com/news` |
+| Amazon（新闻室） | 主页抓取 | `aboutamazon.com/news` |
+| Microsoft（官方博客） | RSS | `blogs.microsoft.com/feed/` |
+| GitHub（官方博客） | RSS | `github.blog/feed/` |
 | CGTN Tech / Xinhua 科技 | RSS/主页 | 同上 |
-| MIT Technology Review（技术事实） | RSS | `technologyreview.com/feed/` |
-| Ars Technica（技术事实） | RSS | `feeds.arstechnica.com/arstechnica/technology-lab` |
+| MIT Technology Review（技术事实补充） | RSS | `technologyreview.com/feed/` |
+| Ars Technica（技术事实补充） | RSS | `feeds.arstechnica.com/arstechnica/technology-lab` |
 
 ### P3 太空探索
 
