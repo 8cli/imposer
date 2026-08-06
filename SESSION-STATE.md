@@ -21,7 +21,7 @@
 
 | 组件 | 文件 | 能力 |
 |---|---|---|
-| 信源配置 | `sources.json` | 60 已验证源（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 科技：中国 + 国际突破）；CNSA/ESA/OpenAI/Anthropic 带 `rsshub` 字段走本机 RSSHub（源码 dev 模式 @1201，含自定义路由） |
+| 信源配置 | `sources.json` | 60 已验证源（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 科技：中国 + 国际突破）；**34 源走本机 RSSHub**（dev 模式 @1201：社区现成 22 + 自定义 2 + fix 10），26 源直抓 |
 | 信源抓取器 | `fetch_sources.py` | 并发 RSS+主页（as_completed + 8s 超时，55 源 ~28s）、XML 实体容错、英文过滤 |
 | 需求解析器 | `parse_demand.py` | 读 linotype 输出 + demand.json → 健康报告（4 种 Overfull 模式） |
 | 需求-供给匹配器 | `supply.py` | 按单匹配（topic×words×min_kind）、rewrite 标注、used 去重 |
@@ -107,7 +107,8 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 ├── LICENSE (MIT)
 ├── docs/
 │   ├── ARCHITECTURE.md            ← 架构决策 + 12 条教训
-│   ├── DEVELOPMENT-HISTORY.md     ← 完整开发史 + bug 日志 #1-29
+│   ├── DEVELOPMENT-HISTORY.md     ← 完整开发史 + bug 日志 #1-34（含 Phase 9/10 RSSHub）
+│   ├── rsshub-routes/             ← 自定义 RSSHub 路由备份（cnsa/esa + 10 fix + 社区复用，76 文件）
 │   └── superpowers/               ← 设计文档 + 实现计划（开发过程产物）
 ├── skill/
 │   ├── SKILL.md                   ← 8 步引导式闭环 + 改写规则
@@ -128,7 +129,7 @@ GitHub：
 
 - ✅ **全文优先供给**（2026-08-05 晚间落地）：`fetch_fulltext()` + `supply.py fulltext_fn`——主条/深度规格（≥250 词）缓存只有短摘要时自动抓全文压缩（摘要兜底），实测 66 词摘要 → 272 词全文。缓存 `fulltext` 字段跨轮复用
 - ✅ **P4 放宽**（2026-08-05 晚间落地）：中国科技 + 国际科技突破（核聚变等）——linotype 发 `topic:"tech"`/`min_kind:"tech-media"`，sources.json 加 ITER/Phys.org/TechXplore/Nature/IEEE Spectrum/New Scientist（实测 P4 池 80 条）；`_tech_gate` 正向题材门挡国际金融稿
-- ✅ **本机 RSSHub**（2026-08-06 早落地）：**源码 dev 模式**（`~/news/rsshub-dev/start.sh`，端口 1201，crontab @reboot 自启）——dev 模式动态加载 `lib/routes/` 路由，加文件即生效。**自定义路由 2 个**：`/cnsa/news`（P3 中国航天官方，最大缺源补齐）、`/esa/newsroom`（ESA 新闻稿带日期）。已接入 sources.json（CNSA/ESA/OpenAI/Anthropic）。Docker 容器退役（1200 仅内置路由）。**教训**：官方 Docker 镜像只带 prod 构建（路由编译进 dist）；可扩展的是源码 dev 模式 / npm 包 registerRoute；反爬源（WaPo/MS/Blue Origin）任何路由都救不了，需换源
+- ✅ **本机 RSSHub 全量接入**（2026-08-06 早落地）：**源码 dev 模式**（`~/news/rsshub-dev/start.sh`，端口 1201 局域网监听 `*:1201`，crontab @reboot 自启）——dev 模式动态加载 `lib/routes/` 路由。**34 源走 RSSHub**：社区现成 22（OpenAI/Anthropic/NYT/VOA/CSIS/NVIDIA 等）+ **自定义 2**（`/cnsa/news` P3 中国航天官方最大缺源补齐、`/esa/newsroom` ESA 新闻稿带日期）+ **fix 10**（社区路由失效的 tassfix/cfrfix/microsoftfix/githubfix/nasafix/chinadailyfix/scmpfix/naturefix/yahoofix/washingtonpostfix，RSS proxy 带浏览器 UA，全部实测可用）。26 源直抓（GT/Xinhua/CSIS 等无社区路由，或 spacenews/newscientist 反爬 RSSHub 客户端但 Python 直抓可行）。**路由备份**：全部自定义路由在 `docs/rsshub-routes/`（76 文件 + README），仓库自包含。Docker 容器/镜像/卷已全部清除。**教训**：官方 Docker 镜像只带 prod 构建（路由编译进 dist）；可扩展的是源码 dev 模式 / npm 包 registerRoute；社区路由常失效（10 个空）需 fix 路由补位；反爬是客户端特定（RSSHub got 403 vs Python 200）；新增路由目录需重启 dev server
 - **P3 中国航天新源**：P3 新鲜 china-official 素材仍为零（全被 2017 归档过滤）——需补充活跃中国航天英文源（CNSA 英文站更新慢）
 - **topic 信号增强**：综合 RSS 仍会泄漏非科技稿（题材门已兜底主要路径）——可进一步按版块重整 sources.json
 - **审料门自动化**：agent 引导式闭环已就位，可进一步自动预审（URL 合法性/题材/时效）减少人工

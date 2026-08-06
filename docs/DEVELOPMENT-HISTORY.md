@@ -210,3 +210,25 @@ The official Docker image ships **only ③** (`dist/`, `lib/` deleted, `index.mj
 E2E verified on the live dev instance: CNSA 8 items, ESA 5 items with dates, OpenAI/Anthropic 8 items each still served. Found and fixed a real bug: CNSA links lost `/english/` prefix (relative `../../` resolved against `/english/` instead of the list page) — `new URL(href, listUrl)` fixes it.
 
 Persistence: `~/news/rsshub-dev/start.sh` (idempotent, healthcheck) + crontab `@reboot`. Docker container (1200, built-in routes only) retired in favour of the single dev instance (1201, all routes). sources.json `rsshub` fields for CNSA/ESA; `RSSHUB_BASE` → 1201. 54/54 green.
+
+## Phase 10 — Full source routing: community routes + fix routes (2026-08-06)
+
+User pushed further: *"先把社区里好的路由直接用，不需要重复造轮子"* (use good community routes, don't reinvent) and then *"所有信源同步到 8cli/imposer"* (sync everything). Full audit of all 60 sources against the RSSHub source tree.
+
+**Outcome — 34 sources routed through local RSSHub (1201), 26 on direct fetch:**
+
+| Category | Count | Sources |
+|---|---|---|
+| Community routes reused (live) | 22 | OpenAI, Anthropic, Al Jazeera, NYT, VOA, CSIS, NVIDIA, Cloudflare, GitHub, Ars, AOL, Yahoo(→fix), JAXA, Asia Times, Naval News, Space.com, NASA Spaceflight, Universe Today, DeepSeek, Planetary, Phys.org, TechXplore, MIT Tech Review |
+| Custom routes (community absent) | 2 | `/cnsa/news` (P3 China-space official — biggest gap), `/esa/newsroom` |
+| Fix routes (community route dead / anti-bot) | 10 | `/tassfix`, `/cfrfix`, `/microsoftfix`, `/githubfix`, `/nasafix`, `/chinadailyfix`, `/scmpfix`, `/naturefix`, `/yahoofix`, `/washingtonpostfix` — RSS proxy with browser UA |
+| Direct fetch (kept) | 26 | GT, Xinhua, CGTN, CSIS, Brookings, RAND, ABC, AMR, DefenceTalk, EurAsian Times, ISRO, SpaceX, Rocket Lab, Blue Origin(429), ITER, xAI, Moonshot, Z.ai, Alibaba, Google, Amazon, Yahoo→page, IE EE, SpaceNews, New Scientist, Xinhua Space |
+
+**Key learnings from the audit:**
+1. **Community routes are NOT reliable** — 10 of the routes pointing at our sources were dead (TASS 404, NASA/Nature empty, MS/GitHub/SCMP/ChinaDaily/CFR/Yahoo empty). The source tree is community-maintained; a route breaking when the origin site changes is normal.
+2. **Anti-bot is client-specific** — SpaceNews 403 / New Scientist 406 reject the RSSHub client (got/ofetch UA fingerprint), but Python direct fetch works fine. So those 2 stay on direct fetch. Spacenews/New Scientist: no `rsshub` field, keep `mode: rss`.
+3. **The `fix` route pattern** — for a dead community route on a source we need, write `xxxfix/news.ts` (got + browser UA + `responseType:'text'`, or ofetch + `parseResponse: t=>t`), map sources.json to it. 10 fix routes all verified live (chinadailyfix 100, naturefix 75, cfrfix 72, tassfix 33...).
+4. **New top-level route dir needs a dev-server restart** — `registry-dev.ts` `readdirSync` scans once at startup; added dirs aren't picked up until restart. File *edits* auto-reload via tsx watch, new *directories* don't.
+5. **Backed up to 8cli/imposer** — all custom/fix routes live in `docs/rsshub-routes/` (76 files + README), so the skill repo is self-contained even if the local RSSHub source tree is lost.
+
+E2E: P1 131 / P2 119 / P3 96 / P4 80 items. 54/54 green. Commits: 287ee94 (routes backup), e731a80 (routing + fallback).
