@@ -327,7 +327,13 @@ def pick_briefs(news: list[dict], exclude: set, n: int = 4, plate: int = 1) -> l
         _supply_tier(x, "brief"),
         _length_key(x, "brief"),
         KIND_RANK.get(x["kind"], 9)))
-    return pool[:n]
+    # 2026-08-06 修复（闭环空转）：固定 n 槽 + 补稿替换旧简讯 → fill 恒定不涨
+    # （P3/P4 实测 3 轮供给 fill 纹丝不动，被替换旧简讯与新补稿等长）。
+    # 改为：补稿（tier ≤1，按单交付）全保留追加，普通简讯补足 n 条。
+    # BRIEFS 总长 = 补稿数 + n；demand 收敛后不再补稿，累积有天然上限。
+    supplied = [x for x in pool if _supply_tier(x, "brief") <= 1]
+    regular = [x for x in pool if _supply_tier(x, "brief") == 2]
+    return supplied + regular[:n]
 
 
 _TEX_ESCAPES = {
@@ -402,9 +408,32 @@ def _clean_deck(summary: str, title: str) -> str:
 
 
 def split_paragraphs(text: str, max_paras: int = 4) -> list[str]:
-    """摘要 → 段落（按句号+空白分段，最多 max_paras 段）。"""
-    paras = re.split(r"(?<=[.!?。！？])\s+", text.strip())
-    return [p.strip() for p in paras if p.strip()][:max_paras]
+    """摘要/全文 → 段落（最多 max_paras 段，动态目标段长保证词数全保留）。
+
+    2026-08-06 修复（全文优先的补充）：按句切段 + max_paras 硬截断对
+    "每句一行"的短句体全文（如 Cloudflare）会把 280 词切成 ~20 个 13 词
+    短段后只留前 12 段（162/280 词）——主条填不满（P2 实测 84.7%）。
+    修复：当句子数 > max_paras 时，按 target = ceil(词数/max_paras) 合并
+    短句，使全部词装入 max_paras 段（词数不丢、段间距填充保留）；句子数
+    ≤ max_paras 时每句一段（等价原逻辑，散文体不受影响）。
+    """
+    sents = [p.strip() for p in re.split(r"(?<=[.!?。！？])\s+", text.strip()) if p.strip()]
+    if not sents:
+        return []
+    if len(sents) <= max_paras:
+        return sents
+    n_words = sum(len(s.split()) for s in sents)
+    target = max(1, -(-n_words // max_paras))  # ceil：保证词数装进 max_paras 段
+    paras, cur, cur_w = [], [], 0
+    for s in sents:
+        cur.append(s)
+        cur_w += len(s.split())
+        if cur_w >= target:
+            paras.append(' '.join(cur))
+            cur, cur_w = [], 0
+    if cur:
+        paras.append(' '.join(cur))
+    return paras[:max_paras]
 
 
 def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int = 6) -> str:
@@ -481,7 +510,11 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
         out.append("")
     if briefs:
         out.append("BRIEFS:")
-        for b in briefs[:n_briefs]:
+        # 2026-08-06 修复：pick_briefs 返回"补稿全保留 + 普通简讯补足 n"
+        # （append-not-replace 语义，解决替换空转）。此处总量上限 n_briefs+2：
+        # 补稿累积无上限会过冲（P2 实测 10 条简讯 → 782pt > 742pt 溢出 5.4%，
+        # 反逼 autofit 全局降字号拖垮 P1）。上限让每版只追加 2 条补稿。
+        for b in briefs[:n_briefs + 2]:
             out.append(f"**{_clean_headline(b['title'])}:** {b.get('summary', '')[:150]} — {b['source']}.")
     return "\n".join(out)
 
