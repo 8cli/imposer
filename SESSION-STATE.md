@@ -1,7 +1,7 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 14:25 UTC — 第七轮：审计发现全修复（~20 项）+ main-aside 栏平衡接受
-> 状态：**全链路打通 + 4 版填充全达标**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 97.4% / P2 98.2% / P3 95.2% / P4 96.3%，autofit 收敛 + demand 无需求；linotype 单一仓库 ~/news/latex）
+> 保存：2026-08-06 19:50 UTC — 第八轮：几何修复 + 调研方法论 + 总结落盘
+> 状态：**全链路打通 + 4 版填充全达标 + 页边距符合设计契约**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 97.8% / P2 97.8% / P3 98.6% / P4 95.9%，上边距 19.9mm / 下 20.6-21.2mm / 左 14.5mm，autofit 收敛 + demand 无需求；linotype 单一仓库 ~/news/latex）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 四轮）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
 
@@ -196,11 +196,15 @@ demand 补稿生效，成版器本身不用全文。
 autofit 真收敛（此前假收敛 100% 是内容丢失的假象），视觉 PASS，
 demand 无需求。回归 linotype 25/25 + imposer 57/57。
 
-### 08-06 提交（imposer dde4ee9 → 6f868f3 + linotype ca16c17 → 3d2120b）
-imposer: 6fc39d7 → 0fb273c → cd0d4c5 → f49940b → 6f2ddaf → 02eb47b → 88cdf12 → dde4ee9
-  88cdf12 fix: P1 左下角留白（主条截断）+ P2-P4 双长主条溢出
-  dde4ee9 fix: HTML 实体清洗 + 标题截断 + 主条按版控制
-linotype: a9e3468 → 61ac1b2 → ca16c17
+### 08-06 提交（imposer 6fc39d7 → a62e018 + linotype 69cfe27 → b314744）
+imposer 完整链（第八轮后）: 6fc39d7 → 0fb273c → cd0d4c5 → f49940b → 6f2ddaf → 02eb47b →
+  88cdf12 → dde4ee9 → 353dca1 → 6f868f3 → 68a8413 → ad2b785 → b73d667 → 22a031e →
+  97c67bb → 2400731 → 620d6c8 → 6a7d82b → 08b5773 → 999599d → 72e7886 → d1df310 →
+  bb0fc2a → e887d58 → a62e018
+linotype 完整链: 69cfe27 → 2e4450c → aa7635d → d4ecb3e → 7f819b7 → 3feecf2 → 6fd5763 →
+  45d51de → 4a9e897 → 74d5890 → 1fc7da9 → a9e3468 → 61ac1b2 → ca16c17 → 981eb2c →
+  3d2120b → 090fc9b → 1c3ccfd → 891f0c9 → 49fbe14 → 3db6d05 → d3648ea → b9a03de →
+  0077a90 → 81dfd09 → e3baeb2 → b314744
 
 ## 三、验证状态
 
@@ -285,6 +289,15 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 44. **mainstory colH 反复调试教训**——vsplit 截断 vs vtop 自然高的栏平衡反复横跳；main 栏短于 aside 是版面平衡特性（fill 达标），接受列尾空隙，不强制等高
 45. **P2 等宽栏简讯数决定填充**——4/5 条 93.8%、6 条 98.2%；简讯数按版实测微调
 46. **调研方法论（全局规则 #6，2026-08-06）**——技术选型调研不能只看"它赢在什么"，还要评估"我们要对抗它的什么"。linotype 选 LaTeX 时评估了排版质量（赢），没充分评估"固定版心不推页"是 LaTeX 流水排版的设计反例——54 条血泪中约 30 条是纯 TeX 语义坑（boxed multicol/vsplit/topskip/\dimexpr 吞 \fi），大部分本可通过预先通读 multicol.sty/TeXbook 发现。调研深度标准：**至少能列出"我们要对抗的默认行为清单 + 预估代价"再定选型**。已写入 ~/.claude/CLAUDE.md 调研铁律第 6 条
+47. **\vtop to\colH 是强制盒高，内容超高时溢出而非截断**——vsplit 切 264pt 内容在 vtop 重排后可能超高 → main 栏底部溢出。vsplit 只切行边界（按旧行距），vtop 重排（新行距）高度不同
+48. **mainstory 两栏并排的视觉高度 = 单栏高度，不是两栏之和**（几何模型）——colH 上限 = contentH − 版头，版头 + 单栏 = contentH 精确填满
+49. **mainstory colH 根本修复**——版头收集到 \linotype@headerbox（\global\setbox + \unvcopy + \storybody 设字体防 \deck/\byline 继承默认 11pt），colH = min(自然高/2, contentH − 版头)。P1 main 左栏 193.7→254.5mm，底部空白消除
+50. **plate fill 计量幻影 dp**——vsplit 对含 hbox 两栏的 vbox 切分产生幻影 dp（P1 749.4pt 微超触发 vsplit 后 fill 虚报 1479pt=199%）。修复：\unvcopy 后量自然高（真实渲染高度），Overfull truncated 也基于自然高
+51. **P1 主条 cap 340 防下边距溢出**——cap 355 实测微超 1.2%（内容延伸到 287mm > 版心底 281mm，下边距剩 10mm）；340 → 版头 + 单栏 = 723pt ≈ 97.4%，下边距恢复 16.4mm
+52. **parse_demand 阈值对齐 linotype**——FILL_MIN 0.45→0.95（原旧默认误报健康）；Overfull 判定只认 plate 级 truncated>5%（原 re.search 字样把 0.9% 微截断也报 overfull → "✅ 版面健康"永不出现）
+53. **demand.json 残留清空**——write_demand 无需求返回 None 不覆盖 → 旧补稿单残留（实测 P2 实际 98.2% 但旧文件报 93.8%），闭环步骤 7 白跑一轮；无需求时删除旧文件
+54. **\topskip(11pt) 侵蚀页边距**——plate 是页面第一个盒子（minipage[t] 首元素 0 高规则），页面级 \topskip 胶 = 11pt 插在纸顶 → 每条版整体下移 3.9mm（顶 23.8 vs 设计 20、底 12.2 vs 16，底边小于左右违反报纸惯例）。\setlength{\topskip}{0pt} 实测顶边恢复 20.09mm
+55. **aside column 截断接入 autofit**——P1 侧栏 792.4pt vsplit 截到 732.6pt（丢 49.8pt ≈ 21mm），截断后 plate content < contentH → 不触发 Overfull plate → fill 97.4% 假达标（内容静默丢失）。补解析 (main|aside) column 截断 >5% 即 overfull + P1 简讯 3→2 消除根源
 
 ## 六、目录状态
 
