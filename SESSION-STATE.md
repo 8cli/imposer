@@ -284,6 +284,7 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 43. **main-aside 版头预算 60pt 假设错误**——实际版头 275pt（DECK 250 字符 90pt）；DECK 截 120 字符版头降 213pt，main 栏空间释放
 44. **mainstory colH 反复调试教训**——vsplit 截断 vs vtop 自然高的栏平衡反复横跳；main 栏短于 aside 是版面平衡特性（fill 达标），接受列尾空隙，不强制等高
 45. **P2 等宽栏简讯数决定填充**——4/5 条 93.8%、6 条 98.2%；简讯数按版实测微调
+46. **调研方法论（全局规则 #6，2026-08-06）**——技术选型调研不能只看"它赢在什么"，还要评估"我们要对抗它的什么"。linotype 选 LaTeX 时评估了排版质量（赢），没充分评估"固定版心不推页"是 LaTeX 流水排版的设计反例——54 条血泪中约 30 条是纯 TeX 语义坑（boxed multicol/vsplit/topskip/\dimexpr 吞 \fi），大部分本可通过预先通读 multicol.sty/TeXbook 发现。调研深度标准：**至少能列出"我们要对抗的默认行为清单 + 预估代价"再定选型**。已写入 ~/.claude/CLAUDE.md 调研铁律第 6 条
 
 ## 六、目录状态
 
