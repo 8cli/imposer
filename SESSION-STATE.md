@@ -21,7 +21,7 @@
 
 | 组件 | 文件 | 能力 |
 |---|---|---|
-| 信源配置 | `sources.json` | 60 已验证源（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 科技：中国 + 国际突破）；**34 源走本机 RSSHub**（dev 模式 @1201：社区现成 22 + 自定义 2 + fix 10），26 源直抓 |
+| 信源配置 | `sources.json` | **67 已验证源**（P1 18 / P2 23 / P3 15 / P4 11）；**41 源走本机 RSSHub**（dev 模式 @1201：社区现成 + 自定义 cnsa/esa + fix 10），26 源直抓 |
 | 信源抓取器 | `fetch_sources.py` | 并发 RSS+主页（as_completed + 8s 超时，55 源 ~28s）、XML 实体容错、英文过滤 |
 | 需求解析器 | `parse_demand.py` | 读 linotype 输出 + demand.json → 健康报告（4 种 Overfull 模式） |
 | 需求-供给匹配器 | `supply.py` | 按单匹配（topic×words×min_kind）、rewrite 标注、used 去重 |

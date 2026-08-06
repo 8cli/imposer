@@ -153,13 +153,11 @@ Special characters are escaped by Linotype's `build.py` (Imposer writes raw text
 | Section | Primary (china-official) | Supplement |
 |---|---|---|
 | P1 World & Military | Global Times, Xinhua, CGTN | Al Jazeera, TASS, Asia Times, AMR, Naval News, DefenceTalk, WaPo/NYT/VOA/ABC (western supplement), CSIS/Brookings/RAND/CFR (think-tank) |
-| P2 AI & Tech | Moonshot, Z.ai, DeepSeek, Alibaba | Google, OpenAI†, Anthropic†, NVIDIA, xAI, Cloudflare, MS, GitHub, Amazon, Yahoo/AOL, MIT/Ars |
-
-† fetched via local RSSHub route (`/openai/news`, `/anthropic/news`).
+| P2 AI & Tech | Moonshot, Z.ai, DeepSeek, Alibaba | Google, OpenAI†, Anthropic†, NVIDIA, xAI, Cloudflare, MS, GitHub, Amazon, Yahoo/AOL, MIT/Ars, **Meta AI, DeepMind, Google Research, Amazon AWS (EN), Wired AI, TechCrunch** |
 | P3 Space | CNSA†, Xinhua Space | NASA, ESA†, JAXA, ISRO, SpaceX, Rocket Lab, SpaceNews, Space.com, NASA Spaceflight, Universe Today |
+| P4 Tech (China + int'l) | China Daily, Global Times, Xinhua | SCMP, ITER, Phys.org, TechXplore, Nature, IEEE Spectrum, New Scientist, **The Economist Sci-Tech** |
 
-† custom RSSHub route (`/cnsa/news`, `/esa/newsroom`) — China's space agency English news, previously the plate's biggest gap.
-| P4 Tech (China + int'l) | China Daily, Global Times, Xinhua | SCMP, ITER, Phys.org, TechXplore, Nature, IEEE Spectrum, New Scientist |
+† via local RSSHub: community routes (OpenAI/Anthropic/Meta AI/DeepMind/Google Research/Wired/TechCrunch etc.) + custom routes (`/cnsa/news`, `/esa/newsroom` — China space official, previously the biggest gap) + fix routes (tassfix/cfrfix/microsoftfix/githubfix/nasafix/chinadailyfix/scmpfix/naturefix/yahoofix/washingtonpostfix replacing dead community ones). Full route backup in `docs/rsshub-routes/`.
 
 All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/remove sources.
 

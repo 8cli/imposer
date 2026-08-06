@@ -158,13 +158,11 @@ BRIEFS:
 | 版 | 主源（china-official） | 补充 |
 |---|---|---|
 | P1 国际军事 | 环球时报、新华社、CGTN | 半岛、塔斯社、亚洲时报、亚洲军事评论、海军新闻、防务对话、华盛顿邮报/纽约时报/VOA/ABC（西方补充）、CSIS/布鲁金斯/兰德/CFR（智库） |
-| P2 AI 科技 | 月之暗面、智谱、深度求索、阿里 | 谷歌、OpenAI†、Anthropic†、英伟达、xAI、Cloudflare、微软、GitHub、亚马逊、雅虎/AOL、MIT/Ars |
-
-† 经本机 RSSHub 路由抓取（`/openai/news`、`/anthropic/news`）。
+| P2 AI 科技 | 月之暗面、智谱、深度求索、阿里 | 谷歌、OpenAI†、Anthropic†、英伟达、xAI、Cloudflare、微软、GitHub、亚马逊、雅虎/AOL、MIT/Ars、**Meta AI、DeepMind、Google Research、Amazon AWS (EN)、Wired AI、TechCrunch** |
 | P3 太空 | 中国国家航天局†、新华社航天 | NASA、ESA†、JAXA、ISRO、SpaceX、火箭实验室、SpaceNews、Space.com、NASA Spaceflight、今日宇宙 |
+| P4 科技（中国 + 国际） | 中国日报、环球时报、新华社 | 南华早报、ITER、Phys.org、TechXplore、Nature、IEEE Spectrum、新科学家、**经济学人科技** |
 
-† 自定义 RSSHub 路由（`/cnsa/news`、`/esa/newsroom`）——中国航天局英文新闻，补齐了 P3 最大的缺源。
-| P4 科技（中国 + 国际） | 中国日报、环球时报、新华社 | 南华早报、ITER、Phys.org、TechXplore、Nature、IEEE Spectrum、新科学家 |
+† 经本机 RSSHub 抓取：社区现成路由（OpenAI/Anthropic/Meta AI/DeepMind/Google Research/Wired/TechCrunch 等）+ 自定义路由（`/cnsa/news`、`/esa/newsroom`——中国航天局英文新闻，补齐 P3 最大缺源）+ fix 路由（tassfix/cfrfix/microsoftfix/githubfix/nasafix/chinadailyfix/scmpfix/naturefix/yahoofix/washingtonpostfix 替代失效的社区路由）。完整路由备份在 `docs/rsshub-routes/`。
 
 全部 URL 已验证可达（2026-08-05）。增删信源改 `scripts/sources.json`。
 
