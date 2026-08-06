@@ -1,9 +1,9 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 16:20 UTC — 第三轮：直抓源迁入 RSSHub + 首期实报跑通 + linotype 单一仓库统一
-> 状态：**全链路打通**（imposer 54/54 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；首期 2026-08-06 实报 autofit 达标 ≥95%；linotype 统一为单一仓库 ~/news/latex）
-> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 三轮）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 6f2ddaf）+ **8cli/linotype**（main @ ca16c17）
+> 保存：2026-08-06 09:30 UTC — 第四轮：出报质量修复（实体清洗/标题截断/主条按版控制/左下角留白改善）
+> 状态：**全链路打通 + 出报质量修复**（imposer 54/54 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；首期实报 P3 达标、P1/P2/P4 84-89%——诚实缺口：P1 素材池极限；linotype 单一仓库 ~/news/latex）
+> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 四轮）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
 
 ## 一、项目定位
 
@@ -109,9 +109,40 @@ RSSHub(标题+链接) → FreshRSS 聚合(41 feed) + af-readability 全文入库
 - `~/news/linotype-repo` 副本**已删除**——不再双目录手同步
 - 开发产物（SESSION-STATE/newspaper.*/archive-*.cls）入 .gitignore 不进公开仓库
 
-### 08-06 提交（imposer 6f2ddaf + linotype ca16c17）
-imposer: 6fc39d7 SQLite查询 → 0fb273c 会话状态 → cd0d4c5 af-readability修复 → f49940b 删NYT → 6f2ddaf 直抓源迁入+出报
-linotype: a9e3468 → 61ac1b2 inbrief多组 → ca16c17 统一单一仓库
+### 08-06 第四轮：出报质量修复（用户验收三问题）
+
+**问题 1：P1 左下角大块留白**（用户："第一版左下角一大块留白，达到 95% 以上填充率？"）
+- 根因：`split_paragraphs` max_paras=4/8 截断主条——319 词完整主条被截到 108/182 词，main-aside 主栏 2 栏排不满 → 底部全空（视觉实证 0 墨迹）
+- 修复：主条完整使用（max_paras=14 覆盖 400 词上限）
+- 结果：P1 主栏 **53% → 80%**（左下角大块留白消除）
+- 诚实缺口：P1 素材池最长仅 359 词（DefenceTalk 军机坠毁），仍填不满主栏 20% 版底——需补 P1 长文源
+
+**问题 2：HTML 实体字符**（用户："出现了 &#8220 这样的字符，需要内容清洗"）
+- 根因：fetch_freshrss.py 提取 content 后没 unescape——af-readability 存纯 ASCII 实体（mb_encode_numericentity），`&#8220;`（"）`&#8217;`（'）`&amp;` 直出到 plates（实测 **571 条**）
+- 修复：`html.unescape(text)` + title 同样 unescape
+- 结果：**571 条 → 0 条**（plates 层 4 版全零）
+
+**问题 3：P3 标题过大/单词间距不协调**（用户："第三版左上角标题过大"）
+- 根因：P3 标题 84 字符 ISRO 全名，3.58× 字号 display 排版过大
+- 修复：`_clean_headline` 超长标题截断 60 字符（按词界/括号）；`_clean_deck` 去导航残留（'Home /'）与标题重复
+- 结果：P3 标题正常（Perseid 流星雨 38 字符），DECK 无重复无残留
+
+**附带修复：主条按版控制（防溢出）**
+- P2-P4 等宽 3 栏容量 ~280 词——P3 327 词 ISRO 实测 753pt > 742pt 溢出 141pt
+- 修复：P2-P4 主条截到 280 词（按词界句界），P1 完整（侧栏容量大）
+- 结果：全版不再溢出（Plate content 622-728pt 全部 ≤ 版心）
+
+**填充率诚实状态**（用户质疑"达到 95%？"）：
+- 重跑 supply 闭环后：P3 达标、P1 84%、P2 87%、P4 89%——**未到 95%**
+- autofit 已到边界（columns=2 最小、字号最大）+ "内容天然短"——素材总量不足
+- P1 主条池极限 359 词；P2-P4 短摘要多、长稿靠 supply 全文预取
+- **诚实结论**：当前 84-89% 是现有素材的最佳结果，到 95% 需补长文源（P1 军事深度稿）
+
+### 08-06 提交（imposer dde4ee9 + linotype ca16c17）
+imposer: 6fc39d7 → 0fb273c → cd0d4c5 → f49940b → 6f2ddaf → 02eb47b → 88cdf12 → dde4ee9
+  88cdf12 fix: P1 左下角留白（主条截断）+ P2-P4 双长主条溢出
+  dde4ee9 fix: HTML 实体清洗 + 标题截断 + 主条按版控制
+linotype: a9e3468 → 61ac1b2 → ca16c17
 
 ## 三、验证状态
 
@@ -120,9 +151,10 @@ linotype: a9e3468 → 61ac1b2 inbrief多组 → ca16c17 统一单一仓库
 - ✅ E2E 实证（真实缓存重跑）：0 归档 URL（2017 旧闻过滤）、0 跨版重复、供给 NASA 简讯真正进版
 - ✅ agent 架构：SKILL.md 8 步引导式闭环 + 改写规则章节，PYEOF 零遗留
 - ✅ 文档诚实化：README×2 / HISTORY 声明与产物逐项比对通过（上轮虚假实证教训已纠正）
-- ✅ 公开仓库推送：imposer @ 6f2ddaf、linotype @ ca16c17（含 --demand + fill_min + inbrief 多组）
+- ✅ 公开仓库推送：imposer @ dde4ee9、linotype @ ca16c17（含 --demand + fill_min + inbrief 多组）
 - ✅ 持久化：linotype 统一单一仓库 ~/news/latex（副本 linotype-repo 已删，重启不丢）
-- ✅ 首期实报：~/news/daily/2026-08-06/out.pdf（2 页 A3 横版 4 版，autofit 达标 ≥95%）
+- ✅ 首期实报：~/news/daily/2026-08-06/out.pdf（2 页 A3 横版 4 版，P3 达标、P1/P2/P4 84-89%——诚实缺口 P1 素材池极限）
+- ✅ 出报质量修复：HTML 实体 0 残留、标题截断、主条按版控制（P1 主栏 53%→80%）
 
 ## 四、关键架构决策
 
@@ -164,6 +196,10 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 14. **FreshRSS 扩展配置值格式是 JSON 字符串不是 PHP 数组**——attributeString() 只读 string；`ext_af_readability_categories` 写成 PHP 数组 → 配置静默全空 → 所有文章跳过（88.7% 无全文根因）
 15. **容器重建丢扩展文件 + extensions_enabled**——三次重建后 FreshRSS 回到干净状态，扩展全丢；重建后必须重装扩展 + 两步配置
 16. **inbrief 宏只渲染 3 条简讯**——linotype build.py `p['briefs'][:3]` 硬编码截断；P2/P3 主条池不足时填充上不去，需按版差异化简讯数（P1/P4=3 达标，P2/P3=6 补填充）
+17. **HTML 实体必须 unescape**——af-readability 存纯 ASCII 实体（mb_encode_numericentity），fetch 层不 unescape 则 &#8220; 等直出到 plates（实测 571 条）；加 html.unescape 一次解决
+18. **主条截断是 P1 左下角留白根因**——split_paragraphs max_paras=4/8 把 319 词截到 108/182 词，main-aside 主栏排不满；主条必须完整（max_paras=14）
+19. **3 栏布局主条上限 ~280 词**——P3 327 词实测 753pt > 742pt 溢出 141pt；P2-P4 主条需按词界截断到 280，P1 main-aside 容量大才可完整 400 词
+20. **超长标题要截断**——84 字符 ISRO 全名在 3.58× display 字号排版过大、单词间距不协调；_clean_headline 截 60 字符
 
 ## 六、目录状态
 
@@ -215,4 +251,4 @@ GitHub：
 
 ## 八、诚实的话
 
-Imposer 的核心价值——需求-供给闭环——**机制完整、实证可复现、文档诚实**。08-06 三轮把供给从"实时抓取分析"升级为 **FreshRSS 聚合 + 全文入库 + 查库选文** 的经济架构，方向正确且已验证。午后的 af-readability 根因修复（配置格式 JSON 字符串 + 容器重建丢配置两步坑）把全文覆盖从 11.3% 拉到 **94.8%**；随后直抓源迁入 RSSHub（53/66 源走聚合，任务 #74 AI 公司路由调研否决——SPA 无法写路由保留直抓）、首期实报跑通（autofit 达标 ≥95%）、linotype 统一单一仓库。**诚实短板更新为三条**：**① P2/P3 主条池不足**（>100 词素材用尽，靠差异化简讯数 6 条补填充，视觉验收仍有 9.7mm 栏平衡空白）；**② 素材质量仍受源站活跃度约束**（physorg/techxplore 曾 429 限流）；**③ 13 源保留直抓**（SPA/反爬，出报时实时抓取，未纳入经济架构）。审料门（agent 引导）是质量兜底。真正的完善需要每日真实产出积累反馈，如同 linotype 的 0 star 起点——社区验证是下一步。**下一重点：每日实报常态化 + P2/P3 主条池扩充（新长文源）**。
+Imposer 的核心价值——需求-供给闭环——**机制完整、实证可复现、文档诚实**。08-06 四轮把供给从"实时抓取分析"升级为 **FreshRSS 聚合 + 全文入库 + 查库选文** 的经济架构，方向正确且已验证。af-readability 根因修复（全文覆盖 11.3% → 94.8%）、直抓源迁入 RSSHub（53/66 源走聚合）、首期实报跑通、linotype 统一单一仓库、出报质量修复（实体清洗/标题截断/主条控制）——机制与质量都已打磨。**诚实短板更新为三条**：**① P1 主条池极限**（最长 359 词，主栏 80% 填不满，填充 84%——到 95% 需补军事长文源）；**② P2/P4 同样 87%/89% 未到 95%**（短摘要多、长稿靠全文预取，素材总量不足）；**③ 素材质量仍受源站活跃度约束**（physorg/techxplore 曾 429 限流；13 源保留直抓）。审料门（agent 引导）是质量兜底。真正的完善需要每日真实产出积累反馈，如同 linotype 的 0 star 起点——社区验证是下一步。**下一重点：P1 军事长文源扩充（填满主栏到 95%）+ 每日实报常态化**。
