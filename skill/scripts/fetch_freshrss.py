@@ -59,6 +59,12 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
+    # 源名 → kind 映射（血泪 #38: 原 _kind_for_feed 硬编码技能自带
+    # sources.json——用自定义 sources 跑时 kind 全回退 tech-media，
+    # 亲中优先级全乱、P4 题材门行为变。改用传入的 sources 参数）。
+    kind_by_name = {s["name"]: s.get("kind", "tech-media")
+                    for srcs in sources.values() for s in srcs}
+
     # rsshub path → (版块, 源名) 映射（2026-08-06：同一 feed 可能服务多版块，
     # 如 Global Times/Xinhua 同时在 P1/P3/P4——按 rsshub path 而非 feed 名映射，
     # 每个版块的源条目独立取到同一 feed 内容，source 名用各自的源名）
@@ -135,7 +141,7 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
                 "author": r["author"] or "",
                 "date": str(r["date"]) if r["date"] else "",
                 "source": src_name,
-                "kind": _kind_for_feed(src_name),
+                "kind": kind_by_name.get(src_name, "tech-media"),
             }
             results.setdefault(plate, []).append(entry)
 
@@ -166,18 +172,6 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
     return ordered
 
 
-def _kind_for_feed(feed_name: str) -> str:
-    """feed 名 → kind（查 sources.json 匹配）。默认 tech-media 由 build_plates 用。"""
-    import json as _json
-    try:
-        d = _json.load(open(Path(__file__).parent / "sources.json"))
-        for srcs in d.values():
-            for s in srcs:
-                if s["name"] == feed_name:
-                    return s.get("kind", "tech-media")
-    except Exception:
-        pass
-    return "tech-media"
 
 
 if __name__ == "__main__":
