@@ -1,7 +1,7 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 19:50 UTC — 第八轮：几何修复 + 调研方法论 + 总结落盘
-> 状态：**全链路打通 + 4 版填充全达标 + 页边距符合设计契约**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 97.8% / P2 97.8% / P3 98.6% / P4 95.9%，上边距 19.9mm / 下 20.6-21.2mm / 左 14.5mm，autofit 收敛 + demand 无需求；linotype 单一仓库 ~/news/latex）
+> 保存：2026-08-06 20:50 UTC — 第九轮：博客发布 + 规则上传 8cli/claude
+> 状态：**全链路打通 + 4 版填充全达标 + 页边距符合设计契约 + 博客发布 + 三仓库同步**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 97.8% / P2 97.8% / P3 98.6% / P4 95.9%，上边距 19.9mm / 下 20.6-21.2mm / 左 14.5mm，autofit 收敛 + demand 无需求；linotype 单一仓库 ~/news/latex；博客已发布 clid.net）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 八轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
 > 血泪经验：**55 条**（#1-55 连续，含 #46 调研方法论全局规则 + #47-55 几何修复）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
@@ -197,6 +197,21 @@ demand 补稿生效，成版器本身不用全文。
 autofit 真收敛（此前假收敛 100% 是内容丢失的假象），视觉 PASS，
 demand 无需求。回归 linotype 25/25 + imposer 57/57。
 
+### 08-06 第九轮：博客发布 + CLAUDE.md 上传 8cli/claude（用户收尾）
+
+**博客发布**（pblog 创作模式全链路）：
+- 草稿《排版引擎 + 拼版工：我造了一台 AI 日报印刷机》→ eman 阮一峰式润色
+  （24 处改动 + 事实待核 2 项确认）→ dry-run → 发布
+- **URL**: https://www.clid.net/2026/08/ai.html（post_id 3484617346273784637）
+- 覆盖：CSS→LaTeX 选型 / 固定版心不推页战争 / 需求-供给契约（GitHub 0 结果）/
+  RSSHub+FreshRSS 经济架构 / 55 条血泪 / 心路历程，结尾诚实"开创≠里程碑，0 star 起点"
+
+**CLAUDE.md 上传 8cli/claude**（用户询问"文档和规则上传没有"）：
+- 发现仓库 CLAUDE.md 是旧版（98 行），本地有"开发前调研铁律"整节（含第 6 条）未同步
+- 同步最新 CLAUDE.md（114 行）+ README 补 skills 指引 → `7829d5d`
+- 修正第 6 条"54 条血泪"→"55 条"
+- 三仓库现状：imposer `5852179` / linotype `4c3e105` / claude `7829d5d` 全部推送
+
 ### 08-06 提交（imposer 6fc39d7 → a62e018 + linotype 69cfe27 → b314744）
 imposer 完整链（第八轮后）: 6fc39d7 → 0fb273c → cd0d4c5 → f49940b → 6f2ddaf → 02eb47b →
   88cdf12 → dde4ee9 → 353dca1 → 6f868f3 → 68a8413 → ad2b785 → b73d667 → 22a031e →
@@ -329,8 +344,10 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
   卷: freshrss-data  ← 持久化（--restart unless-stopped）
 
 GitHub：
-  8cli/linotype  @ ca16c17  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex）
-  8cli/imposer   @ 6f2ddaf  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub）
+  8cli/linotype  @ 4c3e105  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex）
+  8cli/imposer   @ 5852179  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub）
+  8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
+  博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
 ```
 
 ## 七、未来方向（可选增强）
