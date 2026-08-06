@@ -441,6 +441,13 @@
       "url": "https://www.newscientist.com/feed/home",
       "kind": "tech-media",
       "mode": "rss"
+    },
+    {
+      "name": "The Economist Sci-Tech",
+      "url": "https://www.economist.com/science-and-technology",
+      "kind": "tech-media",
+      "mode": "page",
+      "rsshub": "/economist/science-and-technology"
     }
   ]
 }
