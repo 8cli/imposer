@@ -1,7 +1,7 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 11:10 UTC — 第五轮：fulltext 选材修复（fill 84-89% → 4 版全达标 ≥95%）+ 视觉阈值对齐
-> 状态：**全链路打通 + 4 版填充全达标**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；首期实报 P1 98.7% / P2 100.2% / P3 95.6% / P4 99.85%，视觉验收 PASS；linotype 单一仓库 ~/news/latex）
+> 保存：2026-08-06 12:40 UTC — 第六轮：全面审计 + multicol 整盒丢失修复（P3 双版正文静默消失根因）
+> 状态：**全链路打通 + 4 版填充全达标（真渲染）**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 98.5% / P2 99.1% / P3 101.9% / P4 95.6%，autofit 真收敛 + 视觉 PASS；linotype 单一仓库 ~/news/latex）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 四轮）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
 
@@ -170,7 +170,33 @@ demand 补稿生效，成版器本身不用全文。
 - 教训：pixelcheck 的空白带阈值必须与 autofit 的 fill_min 对齐，否则"像素说空、
   fill 说达标"的矛盾永存
 
-### 08-06 提交（imposer dde4ee9 → 353dca1 + linotype ca16c17）
+### 08-06 第六轮：全面审计 + multicol 整盒丢失修复（血泪 #25/#26/#27）
+
+**审计发现（4 个并行 agent）**：epoch 秒日期 bug（已修）、max_items 截断 no-op、
+16 源静默缺失、Al Jazeera 阿拉伯语路由、mainaside 宽度公式、fill 计量等。
+
+**本次修复的核心 bug——P3 双版正文静默丢失（比留白更严重：内容消失）**：
+- 表象：P3（第 2 页首版）只剩版头 53.7mm，但 fill 报 100%（假达标）
+- 根因链（全部实证，最小复现 + tracing）：
+  1. @colht 动态计算用 `\ht\linotype@platebox`——vbox 构造中读 =0 →
+     multicol 用满 contentH → 版头 + multicol 超 contentH
+  2. plate 的 vsplit 兜底触发 → vsplit 对 multicol 整盒**全切**（血泪 #5）
+     → 整盒丢弃 → 版面只剩版头
+  3. `\begin/\end` 的 `\begingroup/\endgroup` 回滚 `\setbox` 和 `\newif`
+     赋值 → headerbox=0、multicol flag 丢失（必须 `\global`）
+- 修复：`\plateheader` 环境收集版头到独立盒（`\global\setbox` + `\unvcopy`），
+  storycolumns `@colht = contentH − 版头 − 4pt`（multicol 盒 ≤ contentH），
+  vsplit 兜底跳过含 multicol 的版（`\if@linotype@multicol`，`\global` 防回滚）
+  ——multicol 超高时自然溢出 + Overfull 报告（truncated >5% 驱动 autofit
+  缩字号，不再静默丢内容）
+- 附带：inbrief 栏宽自适应（#25）、TEXINPUTS 锁定引擎目录 cls（#27，
+  Kpathsea 优先加载 tex 目录的旧 cls 导致 plateheader undefined）
+
+**结果**：4 版全达标 ≥95%（P1 98.5 / P2 99.1 / P3 101.9 / P4 95.6），
+autofit 真收敛（此前假收敛 100% 是内容丢失的假象），视觉 PASS，
+demand 无需求。回归 linotype 25/25 + imposer 57/57。
+
+### 08-06 提交（imposer dde4ee9 → 6f868f3 + linotype ca16c17 → 3d2120b）
 imposer: 6fc39d7 → 0fb273c → cd0d4c5 → f49940b → 6f2ddaf → 02eb47b → 88cdf12 → dde4ee9
   88cdf12 fix: P1 左下角留白（主条截断）+ P2-P4 双长主条溢出
   dde4ee9 fix: HTML 实体清洗 + 标题截断 + 主条按版控制
@@ -237,6 +263,9 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 22. **简讯数按版差异化，加多了适得其反**——P2/P4 缺 44/32pt 各 +1 条（4 条）即达标；+2 条（5 条）致 P2 溢出 744.5pt > 742.6，且 autofit 压字号拖累 P3 从 99.9% 掉到 90.6%。每次改版后看 autofit 收敛，别凭感觉加内容
 23. **pixelcheck min_gap 必须与 fill_min 对齐**——8mm 会把 95% 达标底边（9mm=4.4% < 5%）误报 FAIL；对齐 12mm（= 版心 261mm 的 4.6%）后"像素说空、fill 说达标"矛盾消除。KICKER 小字（79% 字号）稀疏也会被墨迹阈值吞成"空白带"——先放大确认再动内容
 24. **argparse help 含 % 需 %% 转义**（argparse 的 help 是 % 格式化字符串）+ build.py 提取报告行须用正则精确匹配（`^\s*(列\d+|[左右]半版|整页):`）——help 文本含"空白带"/"mm"字样会误入视觉报告
+25. **inbrief 是通栏设计（3×0.319\contentW 并排），进 multicol 栏内必溢出 348pt**——\linewidth 自适应：栏内单列堆叠（同 \asidebriefs），通栏保留 3 栏并排。血泪：全版宽宏不能直接搬进栏内
+26. **vsplit 对 multicol 整盒是全切——内容超高时整盒被丢，fill 虚高假达标**。根因链：① @colht 动态计算用 \ht\platebox（vbox 构造中=0）→ multicol 满版 → 版头+multicol 超 contentH → vsplit 触发；② vsplit 切不动 multicol 整盒 → 整盒丢弃 → 版面只剩版头（P3 双版实测 53.7mm，fill 报 100%）；③ \begin/\end 的 \begingroup/\endgroup 回滚 \setbox 和 \newif 赋值（需 \global）。修复：\plateheader 收集版头（\global\setbox + \unvcopy），storycolumns @colht = contentH − 版头 − 4pt，vsplit 跳过含 multicol 的版（\global flag）——超高自然溢出 + Overfull 报告（truncated >5% 驱动 autofit 缩字号）
+27. **Kpathsea 优先加载 tex 文件目录的 cls**——产物目录残留旧版 linotype.cls 会静默覆盖引擎目录新版（实测 plateheader undefined，编译用了 daily 目录旧 cls）。compile_tex 设 `TEXINPUTS=引擎目录:` 锁定
 
 ## 六、目录状态
 

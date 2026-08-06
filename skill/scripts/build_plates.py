@@ -80,11 +80,24 @@ def _is_english(text: str, threshold: float = 0.85) -> bool:
 
 
 def _parse_date(s: str) -> datetime | None:
-    """解析 RSS RFC 2822（'Wed, 05 Aug 2026 12:20:10 +0000'）与 Atom ISO 8601
-    （'2026-08-05T10:00:00Z'）。解析失败/空 → None（视为无日期素材）。"""
+    """解析三种日期格式：
+      - epoch 秒/毫秒（'1786005159'，FreshRSS entry.date——2026-08-06 实测
+        全部 1508 条是这个格式，此前 _parse_date 不支持 → is_stale 时效过滤
+        三层全失效，2017 归档稿只要标题无年份就能进版）
+      - Atom ISO 8601（'2026-08-05T10:00:00Z'）
+      - RSS RFC 2822（'Wed, 05 Aug 2026 12:20:10 +0000'）
+    解析失败/空 → None（视为无日期素材）。"""
     if not s:
         return None
     s = s.strip()
+    if s.isdigit():  # epoch 秒（10 位）或毫秒（13 位），时区 UTC
+        try:
+            ts = int(s)
+            if ts > 10**12:  # 毫秒 → 秒
+                ts //= 1000
+            return datetime.fromtimestamp(ts, tz=timezone.utc)
+        except (ValueError, OSError, OverflowError):
+            return None
     try:  # ISO 8601（含 Z 结尾与 date-only）
         iso = s[:-1] + "+00:00" if s.endswith("Z") else s
         dt = datetime.fromisoformat(iso)

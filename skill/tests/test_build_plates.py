@@ -344,6 +344,23 @@ def test_write_plate_body_uses_fulltext_with_cap():
     check(words1 >= 300, f"P1 主条应保留主体内容，实际 {words1}")
 
 
+
+def test_is_stale_epoch_seconds():
+    """2026-08-06 修复：FreshRSS entry.date 是 epoch 秒（'1786005159'），
+    _parse_date 此前不支持 → is_stale 时效过滤全失效（2017 归档稿只要标题
+    无年份就能进版）。epoch 秒/毫秒都必须正确解析并判定时效。"""
+    import time
+    now = int(time.time())
+    old = {"date": str(now - 40 * 86400), "title": "Trade pact", "url": "https://e.com/o1"}  # 40 天前
+    fresh = {"date": str(now - 86400), "title": "New story", "url": "https://e.com/n1"}       # 1 天前
+    check(bp.is_stale(old), f"40 天前 epoch 应判过期: {bp.is_stale(old)}")
+    check(not bp.is_stale(fresh), f"1 天前 epoch 不应判过期: {bp.is_stale(fresh)}")
+    # 毫秒格式
+    old_ms = {"date": str((now - 40 * 86400) * 1000), "title": "Old ms", "url": "https://e.com/o2"}
+    check(bp.is_stale(old_ms), "40 天前 epoch 毫秒应判过期")
+    # 三种格式互不破坏
+    check(bp._parse_date("2026-08-05T10:00:00Z") is not None, "ISO 8601 仍应解析")
+    check(bp._parse_date("Wed, 05 Aug 2026 12:20:10 +0000") is not None, "RFC 2822 仍应解析")
 def main():
     test_topic_to_plate_tech_mapping()
     test_tech_gate_p4_international()
@@ -367,12 +384,13 @@ def main():
     test_main_story_prefers_fulltext_length()
     test_content_words_prefers_fulltext()
     test_write_plate_body_uses_fulltext_with_cap()
+    test_is_stale_epoch_seconds()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({22} tests)")
+    print(f"ALL TESTS PASSED ({23} tests)")
 
 
 if __name__ == "__main__":
