@@ -69,11 +69,30 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
                 path_to_sources.setdefault(s["rsshub"], []).append((plate, s["name"]))
     # feed URL → rsshub path（FreshRSS feed.url = http://172.17.0.1:1201<rsshub>）
     feed_url_to_path = {}
+    subscribed_paths = set()
     for r in cur.execute("SELECT id, name, url FROM feed").fetchall():
         u = r["url"] or ""
         for path in path_to_sources:
             if u.endswith(path):
                 feed_url_to_path[r["id"]] = path
+                subscribed_paths.add(path)
+
+    # 启动校验（2026-08-06 血泪 #30）: 配置源 vs 已订阅 feed 对照——
+    # 未订阅的 rsshub path 静默导致对应源全空（实测 /xinhuaenglish/news
+    # 未订阅 → P1 Xinhua English / P3 Xinhua Space / P4 Xinhua 三源颗粒无收，
+    # 版块覆盖静默萎缩）。缺失必须告警，否则用户只看条数永远发现不了。
+    for path, plate_srcs in path_to_sources.items():
+        if path not in subscribed_paths:
+            for plate, src_name in plate_srcs:
+                print(f"  ⚠️ {src_name} ({plate}) 未订阅 {path} — 该源在 FreshRSS 路径下为空!")
+
+    # 无 rsshub 的源（直抓源）: 标注走 fetch_sources 路径（诚实说明，非错误）
+    no_rsshub = [(p, s["name"]) for p, srcs in sources.items() for s in srcs
+                 if not s.get("rsshub")]
+    if no_rsshub:
+        names = "、".join(f"{n}({p})" for p, n in no_rsshub[:5])
+        more = f" 等 {len(no_rsshub)} 源" if len(no_rsshub) > 5 else ""
+        print(f"  ℹ️ {len(no_rsshub)} 个直抓源不走 FreshRSS（SPA/反爬，fetch_sources 直抓）: {names}{more}")
 
     # 查最新文章（含全文），按 feed 归属
     rows = cur.execute("""
@@ -84,10 +103,20 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
     """).fetchall()
 
     results = {}
+    feed_counts = {}  # 2026-08-06 修复（血泪 #29）: 按 feed 配额截断——
+                      # 原 max_items*5 截断是 no-op（continue 只跳内层循环），
+                      # 每版拉到全库历史（477 条 vs 预期 40），旧稿与新闻同池
+                      # 竞争（29 天前长文压掉 2 天前新文）。按 feed 每源取最新
+                      # N 条，低量智库源（CSIS/Brookings/RAND/CFR）不被高量源
+                      # （Asia Times 112 条）挤掉。
     for r in rows:
         path = feed_url_to_path.get(r["id_feed"])
         if not path:
             continue
+        fc = feed_counts.get(r["id_feed"], 0)
+        if fc >= max_items:
+            continue  # 该 feed 已取满最新 max_items 条（id 倒序 = 时间倒序）
+        feed_counts[r["id_feed"]] = fc + 1
         content = r["content"] or ""
         text = re.sub(r"<[^>]+>", " ", content)
         text = re.sub(r"\s+", " ", text).strip()
@@ -109,8 +138,6 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
                 "kind": _kind_for_feed(src_name),
             }
             results.setdefault(plate, []).append(entry)
-            if len(results[plate]) >= max_items * 5:
-                continue  # 每版留足候选
 
     conn.close()
     # 按 sources.json 的版块顺序返回

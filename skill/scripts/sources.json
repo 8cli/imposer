@@ -24,8 +24,7 @@
       "name": "Al Jazeera",
       "url": "https://www.aljazeera.com/xml/rss/all.xml",
       "kind": "independent",
-      "mode": "rss",
-      "rsshub": "/aljazeera/news"
+      "mode": "rss"
     },
     {
       "name": "TASS",

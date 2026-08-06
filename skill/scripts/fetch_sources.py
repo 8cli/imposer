@@ -178,8 +178,8 @@ def fetch_rss(source: dict, max_items: int = 8) -> list[dict]:
             continue
         seen_urls.add(link)
         seen_titles.add(norm_title)
-        items.append({"title": title, "url": link, "summary": strip_tags(desc)[:400],
-                      "author": author, "date": date})
+        items.append({"title": unescape(title), "url": link, "summary": strip_tags(desc)[:400],
+                      "author": author, "date": date})  # 2026-08-06 血泪 #32: title 也要 unescape（RSSHub 双编码 &amp;amp; 直出到版面）
         if len(items) >= max_items:
             break
     return items
