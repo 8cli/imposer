@@ -6,14 +6,22 @@
 import argparse, json, re, sys
 from pathlib import Path
 
-FILL_MIN = 0.45  # 与 linotype autofit 下限一致
+FILL_MIN = 0.95  # 与 linotype autofit 下限一致（血泪 #52: 原 0.45 是旧默认——
+                 # linotype 已是 0.95 严肃报纸标准，0.45 把"应补稿的版面"
+                 # 报 OK，健康报告与 demand.json 发单信号自相矛盾）
 
 # linotype.cls 的全部 Overfull 输出模式（终审 I-1）:
 #   "Overfull plate: content ..."   (:557 整版溢出)
 #   "Overfull main column: ..."     (:364 主栏超高截断)
 #   "Overfull aside column: ..."    (:369 侧栏超高截断)
 #   "Overfull mainstory: ..."       (:408 主条 vsplit 截断)
-_OVERFULL_RE = re.compile(r"Overfull (?:plate: content|main column|aside column|mainstory)")
+# 2026-08-06 血泪 #52: Overfull 判定与 linotype build.py parse_feedback
+# 完全一致——只认 plate 级 truncated>5%（main/aside column 的 vsplit
+# 截断是设计内兜底，autofit 不因它压字号，parse_demand 也不应报 overfull；
+# 原 re.search 字样判定把 0.9% 微截断也报 overfull → 健康报告永不出现
+# "✅ 版面健康"，与 autofit 收敛信号自相矛盾）。
+_OVERFULL_TRUNC_RE = re.compile(
+    r"Overfull plate: content [\d.]+pt\s*> contentH ([\d.]+)pt, truncated ([\d.]+)")
 
 
 def parse_build_output(stdout: str, log_path: Path | None = None,
@@ -31,9 +39,11 @@ def parse_build_output(stdout: str, log_path: Path | None = None,
     log_text = ""
     if log_path and log_path.exists():
         log_text = log_path.read_text(errors="replace")
-    if _OVERFULL_RE.search(log_text):
-        report["overfull"] = True
-        report["messages"].append("⚠️ 存在 Overfull 警告（plate/main column/aside column/mainstory）")
+    for m in _OVERFULL_TRUNC_RE.finditer(log_text):
+        content_h, truncated = float(m.group(1)), float(m.group(2))
+        if truncated > content_h * 0.05:  # 与 linotype build.py 同阈值
+            report["overfull"] = True
+            report["messages"].append(f"⚠️ 严重溢出 truncated {truncated:.1f}pt > 5% 版心")
     for m in re.finditer(r"Plate content: ([\d.]+)pt/ contentH ([\d.]+)pt", log_text):
         c, ch = float(m.group(1)), float(m.group(2))
         if ch > 0: report["fills"].append(c / ch)
