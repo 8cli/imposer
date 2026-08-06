@@ -248,8 +248,8 @@ def pick_main_stories(news: list[dict], n: int = 2, plate: int = 1) -> list[dict
         _topic_penalty(x["title"], plate),
         _tech_gate(x, plate),
         _supply_tier(x, "main"),
-        KIND_RANK.get(x["kind"], 9),
-        _length_key(x, "main")))
+        _length_key(x, "main"),        # 长度（主条长者先）先于信源层级（2026-08-06 去 china-official 优先）
+        KIND_RANK.get(x["kind"], 9)))  # 同分决胜：亲中仍占优，但不再独占主条
     big = [x for x in ordered if len(x["summary"].split()) >= MIN_MAIN_WORDS]
     if len(big) >= n:
         return big[:n]

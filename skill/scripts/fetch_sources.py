@@ -34,6 +34,10 @@ NON_ARTICLE_URL_MARKERS = (
     "/rss", "/feed/", "/tag/", "/tags/", "/topics/", "/author/", "/login",
     "/signup", "/subscribe", "/advertise", "/wp-login", "/search",
     "/category/", "/categories/",
+    # 频道/专题页（非文章）——Xinhua 英文站的 culture/special/xinhuanews/silkroad/weekly
+    # 等导航页被误当文章抓（2026-08-06 实证：8 条里 5 条是频道页）
+    "/culture/", "/special/", "/xinhuanews", "/silkroad", "/weekly", "/bilingual",
+    "/sci/", "/tech/", "/photo/",
 )
 # 标题标记：导航/非文章标题（如 Anthropic 页的 "Download press kit"、
 # 无障碍跳转链接 "Skip to main content"）
@@ -230,6 +234,20 @@ def fetch_fulltext(url: str, max_chars: int = 8000) -> str:
                 and re.search(r"[.!?]", text)):
             paras.append(text)
     body = " ".join(paras)
+    # 长字符串拼接 fallback（2026-08-06）：GT 等页面正文嵌在 JS 变量/属性字符串里，
+    # <p> 只有导语（85 词），长字符串拼接可得 458 词全文。仅当 <p> 提取不足时触发。
+    if len(body.split()) < 150:
+        longs = re.findall(r'["\']([^"\']{100,})["\']', html)
+        seen, parts = set(), []
+        for s in longs:
+            s = s.strip()
+            if (s not in seen and re.search(r"[.!?]", s)
+                    and not s.startswith(("http", "www.", "//", "data:"))):  # 滤 URL/图片
+                seen.add(s)
+                parts.append(s)
+        joined = " ".join(parts)
+        if len(joined.split()) > len(body.split()):
+            body = joined
     if not body.strip():
         return ""
     if len(body) > max_chars:
