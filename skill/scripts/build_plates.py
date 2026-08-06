@@ -506,7 +506,7 @@ def write_plates(results: dict, out_dir: Path) -> None:
     # 2026-08-06 第七轮实测微调: P3 92.1% 缺 1 条（3→4 补填充），
     # P4 104.5% 超量（4→3 防全局压字号拖累 P2/P3——P4 超 33.7pt 微超
     # 会触发 autofit 溢出迭代压字号，P2/P3 掉到 92%）
-    briefs_per_plate = {1: 3, 2: 4, 3: 4, 4: 3}
+    briefs_per_plate = {1: 3, 2: 6, 3: 4, 4: 3}
     seen = set()  # 四版池级已用 URL（终审 I-2 跨版去重）
     for plate, news in results.items():
         idx = plate_names.get(plate)
