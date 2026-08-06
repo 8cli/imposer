@@ -239,6 +239,7 @@ def fetch_fulltext(url: str, max_chars: int = 8000) -> str:
         return ""
     body = re.sub(r"<[^>]+>", " ", summary_html)
     body = re.sub(r"\s+", " ", body).strip()
+    body = unescape(body)  # 血泪 #40: 与 fetch_freshrss 对称（af-readability 数字实体入库，lxml 已解码但 &nbsp;→\xa0 残留）
     if not body:
         return ""
     if len(body) > max_chars:
