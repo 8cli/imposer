@@ -72,13 +72,6 @@
       "rsshub": "/washingtonpostfix/news"
     },
     {
-      "name": "New York Times",
-      "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
-      "kind": "western",
-      "mode": "rss",
-      "rsshub": "/newyorktimes/news"
-    },
-    {
       "name": "VOA",
       "url": "https://www.voanews.com/rss/",
       "kind": "western",
