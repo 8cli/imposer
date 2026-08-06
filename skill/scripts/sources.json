@@ -259,6 +259,20 @@
       "kind": "company",
       "mode": "page",
       "rsshub": "/amazon/awsblogs/en_US"
+    },
+    {
+      "name": "Wired AI",
+      "url": "https://www.wired.com/tag/artificial-intelligence/",
+      "kind": "tech-media",
+      "mode": "page",
+      "rsshub": "/wired/tag/ai"
+    },
+    {
+      "name": "TechCrunch",
+      "url": "https://techcrunch.com/",
+      "kind": "tech-media",
+      "mode": "page",
+      "rsshub": "/techcrunch/news"
     }
   ],
   "P3": [
