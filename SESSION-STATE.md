@@ -2,7 +2,8 @@
 
 > 保存：2026-08-06 19:50 UTC — 第八轮：几何修复 + 调研方法论 + 总结落盘
 > 状态：**全链路打通 + 4 版填充全达标 + 页边距符合设计契约**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 97.8% / P2 97.8% / P3 98.6% / P4 95.9%，上边距 19.9mm / 下 20.6-21.2mm / 左 14.5mm，autofit 收敛 + demand 无需求；linotype 单一仓库 ~/news/latex）
-> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 四轮）
+> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 八轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
+> 血泪经验：**55 条**（#1-55 连续，含 #46 调研方法论全局规则 + #47-55 几何修复）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
 
 ## 一、项目定位
