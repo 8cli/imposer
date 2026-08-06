@@ -30,6 +30,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+from html import unescape
 from pathlib import Path
 
 CONTAINER = "freshrss"
@@ -90,9 +91,15 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
         content = r["content"] or ""
         text = re.sub(r"<[^>]+>", " ", content)
         text = re.sub(r"\s+", " ", text).strip()
+        # 内容清洗（2026-08-06）：HTML 实体转回字符——af-readability 存的是
+        # 纯 ASCII 实体（mb_encode_numericentity），出报前必须 unescape，
+        # 否则 &#8220;（"）、&#8217;（'）、&amp; 直出到 plates（实测 571 条）
+        text = unescape(text)
+        # title 同样可能含实体（RSSHub 路由原样带出）
+        title = unescape(r["title"] or "")
         for plate, src_name in path_to_sources[path]:
             entry = {
-                "title": r["title"] or "",
+                "title": title,
                 "url": r["link"] or r["guid"] or "",
                 "summary": text[:400] if text else "",
                 "fulltext": text if len(text) > MIN_FULLTEXT_CHARS else "",

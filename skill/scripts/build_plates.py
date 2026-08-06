@@ -322,6 +322,39 @@ def byline_of(news: dict) -> str:
     return f"By {news['source']} News Desk"
 
 
+def _clean_headline(title: str, max_chars: int = 60) -> str:
+    """标题清洗（2026-08-06）：超长标题截断到 max_chars（按词界），
+    防 3.58× 字号 display 标题溢出/过大（P3 ISRO 84 字符标题实测
+    左上角标题过大、单词间距不协调）。按句点/括号截断更自然。
+    """
+    t = title.strip()
+    if len(t) <= max_chars:
+        return t
+    # 优先在括号前截（去掉补充说明）
+    paren = re.search(r'\s*[\(（]', t)
+    if paren and paren.start() > 20:
+        return t[:paren.start()].strip()
+    # 按词界截断到 max_chars
+    cut = t[:max_chars]
+    last_space = cut.rfind(' ')
+    return (cut[:last_space] + '…') if last_space > 15 else cut + '…'
+
+
+def _clean_deck(summary: str, title: str) -> str:
+    """DECK 清洗（2026-08-06）：去掉导航残留（'Home /'）与标题重复开头——
+    ISRO 摘要以 'Home / ISRO successfully...' 开头，DECK 重复标题首词。
+    """
+    s = summary.strip()
+    # 去导航残留：'Home /'、'Home/'、'By ...' 前缀
+    s = re.sub(r'^Home\s*/?\s*', '', s)
+    s = re.sub(r'^(Home|Topics|Latest)\s+', '', s)
+    # 标题重复：DECK 以标题开头时去掉（标题已在 HEADLINE）
+    t = title.strip()
+    if t and (s.startswith(t) or s.startswith(t[:40])):
+        s = s[len(t):].strip()
+    return s[:250]
+
+
 def split_paragraphs(text: str, max_paras: int = 4) -> list[str]:
     """摘要 → 段落（按句号+空白分段，最多 max_paras 段）。"""
     paras = re.split(r"(?<=[.!?。！？])\s+", text.strip())
@@ -357,29 +390,41 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
     else:
         out.append("COLUMNS: 3")
     out.append("KICKER: " + PLATE_KICKERS.get(idx, "CHINA TECH"))
-    out.append("HEADLINE: " + main[0]["title"])
-    out.append("DECK: " + main[0].get("summary", "")[:250])
+    out.append("HEADLINE: " + _clean_headline(main[0]["title"]))
+    out.append("DECK: " + _clean_deck(main[0].get("summary", ""), main[0]["title"]))
     out.append("BYLINE: " + byline_of(main[0]))
     out.append("BODY:")
-    # 主条正文完整使用（max_paras=14）——2026-08-06 修：原 max_paras=4 截断
-    # 压缩后的主条（250-400词）只取前 4 段（~108词），主栏 2 栏撑不满 →
-    # P1 main-aside 左下角大块留白（视觉实证 61% 高度即空）。
-    # 后改 8 段仍截（319词 14 句 → 182词）——主条必须完整，14 段覆盖
-    # demand 主条上限（400 词 ~16 句）。
-    for para in split_paragraphs(main[0].get("summary", ""), max_paras=14):
+    # 主条正文按版控制（2026-08-06 血泪）：
+    #   P1 main-aside 主栏容量大 → 完整使用（max_paras=14，覆盖 400 词上限），
+    #     填满主栏消除左下角留白
+    #   P2-P4 等宽 3 栏容量 ~280 词 → 截到 280 词（防溢出：
+    #     P3 327 词实测 753pt > 742pt 溢出 141pt）
+    main_paras = 14 if idx == 1 else 12
+    main_body = main[0].get("summary", "")
+    if idx != 1 and len(main_body.split()) > 280:
+        # 按词界截到 280 词
+        words = main_body.split()
+        cut = words[:280]
+        # 尽量在句界截
+        joined = ' '.join(cut)
+        last_sent = max(joined.rfind('. '), joined.rfind('! '), joined.rfind('? '))
+        if last_sent > 200:
+            joined = joined[:last_sent + 1]
+        main_body = joined
+    for para in split_paragraphs(main_body, max_paras=main_paras):
         out.append(para)
     out.append("")
     # 副主条: STORY-B（build.py 解析后 P1 进侧栏 aside，P2-P4 渲染为 subheadline+正文）
     # 注意: STORY-B 后直接跟正文段，不能再写 "BODY:"（会把段落路由回主 body）
     if len(main) > 1:
-        out.append("STORY-B: " + main[1]["title"])
-        for para in split_paragraphs(main[1].get("summary", ""), max_paras=14):
+        out.append("STORY-B: " + _clean_headline(main[1]["title"]))
+        for para in split_paragraphs(main[1].get("summary", ""), max_paras=main_paras):
             out.append(para)
         out.append("")
     if briefs:
         out.append("BRIEFS:")
         for b in briefs[:n_briefs]:
-            out.append(f"**{b['title'][:60]}:** {b.get('summary', '')[:150]} — {b['source']}.")
+            out.append(f"**{_clean_headline(b['title'])}:** {b.get('summary', '')[:150]} — {b['source']}.")
     return "\n".join(out)
 
 
