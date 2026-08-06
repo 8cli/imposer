@@ -45,7 +45,7 @@ MIN_MAIN_WORDS = 100
 #   P1 main-aside 主栏容量大 → 400 词（完整排，填满主栏消除左下角留白）
 #   P2-P4 等宽 3 栏容量 ~280 词 → 280 词（防溢出：
 #     P3 327 词实测 753pt > 742pt 溢出 141pt）
-MAX_MAIN_WORDS = {1: 400, 2: 280, 3: 280, 4: 280}
+MAX_MAIN_WORDS = {1: 300, 2: 280, 3: 280, 4: 280}  # P1 血泪 #44/#45/#46: DECK 120 字符后版头 213pt、两栏 264pt/栏（528pt 总容量 ≈ 250 词正文）。主条尽量长让两栏截断后排满；main 栏短于 aside 是版面平衡特性（fill 已达标，报纸允许列尾空隙）
 
 # URL 日期路径兜底（终审 I-3）：China Daily 综合 RSS 部分条目 date 为空，
 # 但 URL 携带归档路径 —— /a/201712/12/（YYYYMM/DD）、/page/202608/（YYYYMM）、
@@ -57,7 +57,11 @@ _YEAR_TOKEN_RE = re.compile(r"\b(?:19\d{2}|20\d{2})\b")
 # 题材负向关键词（终审 I-4 轻量实现）：标题命中即与版块题材明显不相关 → 降权
 # （P1 题材广不设负向词；P3/P4 共用的 China Daily 综合 RSS 会泄漏纪念/体育类稿件）
 TOPIC_OFF_KEYWORDS = {
-    1: (),
+    # P1 world/military（2026-08-06 血泪 #42: 原为空 → 长度优先把 Brookings
+    # 医保论文 11649 词推上主条）。负向词只降权不删除（素材用尽可回退）：
+    # 医药/教育/纯国内政策论文，不误杀 China trade/security 国际时事。
+    1: ("medicare", "healthcare", "medicaid", "hospital", "student", "loan",
+        "tuition", "university", "housing", "weather", "climate change", "ai "),
     2: ("memorial", "massacre", "anniversary", "sports", "football", "cricket", "celebrity"),
     3: ("memorial", "massacre", "anniversary", "sports", "football", "cricket", "celebrity"),
     4: ("memorial", "massacre", "anniversary", "sports", "football", "cricket", "celebrity"),
@@ -387,7 +391,14 @@ def _clean_deck(summary: str, title: str) -> str:
     t = title.strip()
     if t and (s.startswith(t) or s.startswith(t[:40])):
         s = s[len(t):].strip()
-    return s[:250]
+    # 2026-08-06 血泪 #45: DECK 截 120 字符（≈2 行 45pt）而非 250——
+    # main-aside 版头 = KICKER+HEADLINE+DECK+BYLINE，DECK 250 字符在 mainW
+    # 下排 4-5 行 ≈ 90pt，版头总高 275pt 吃掉版心 37% → main 两栏只剩
+    # 233pt/栏，190 词正文被 vsplit 截断 → main 栏底部空 38mm。120 字符
+    # 版头降到 ~180pt，main 栏空间 281pt/栏，正文可完整容纳。
+    s = s[:120]
+    last_space = s.rfind(' ')
+    return (s[:last_space] + '…') if last_space > 40 else s + '…'
 
 
 def split_paragraphs(text: str, max_paras: int = 4) -> list[str]:
@@ -435,7 +446,7 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
     #   P1 main-aside 主栏容量大 → 400 词（填满主栏消除左下角留白）
     #   P2-P4 等宽 3 栏容量 ~280 词 → 280 词（防溢出：
     #     P3 327 词实测 753pt > 742pt 溢出 141pt）
-    main_paras = 14 if idx == 1 else 12
+    main_paras = 25 if idx == 1 else 12  # P1 主条尽量达 400 词 cap（14 段仅 383 词，main 栏底部空 30-40mm）
     cap = MAX_MAIN_WORDS.get(idx, 280)
     main_body = main[0].get("fulltext") or main[0].get("summary", "")
     if len(main_body.split()) > cap:
@@ -492,7 +503,10 @@ def write_plates(results: dict, out_dir: Path) -> None:
     #     （P2 缺 44.6pt、P4 缺 31.7pt；实测 +2 条（5 条）致 P2 溢出 744.5pt
     #      > 742.6pt 且 autofit 压字号拖累 P3 掉到 90.6%——只 +1 条）
     #   血泪 #16：inbrief 宏支持多组（每 3 条一组），3 条硬编码上限早已解除
-    briefs_per_plate = {1: 3, 2: 4, 3: 3, 4: 4}
+    # 2026-08-06 第七轮实测微调: P3 92.1% 缺 1 条（3→4 补填充），
+    # P4 104.5% 超量（4→3 防全局压字号拖累 P2/P3——P4 超 33.7pt 微超
+    # 会触发 autofit 溢出迭代压字号，P2/P3 掉到 92%）
+    briefs_per_plate = {1: 3, 2: 4, 3: 4, 4: 3}
     seen = set()  # 四版池级已用 URL（终审 I-2 跨版去重）
     for plate, news in results.items():
         idx = plate_names.get(plate)
