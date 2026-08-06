@@ -34,3 +34,20 @@ OpenAI/Anthropic/Al Jazeera/Asia Times/Naval News/CSIS/NVIDIA/AOL/JAXA/Cloudflar
 # 路由文件放进 RSSHub 源码 lib/routes/ 即可（dev 模式自动加载，新增目录需重启）
 # 接入 imposer：sources.json 加 "rsshub": "/<name>/<route>" 字段
 ```
+
+## 2026-08-06 新增 6 自定义路由（直抓源迁移）
+
+| 路由 | 源 | 版块 | 数据源 |
+|---|---|---|---|
+| `/xinhuaenglish/news` | Xinhua English | P1/P4（P3 共用） | english.news.cn 首页（/20260805/<hash>/c.html 模式） |
+| `/globaltimes/news` | Global Times | P1/P4 | globaltimes.cn 首页（/page/202608/<id>.shtml 模式） |
+| `/brookings/articles` | Brookings | P1 | brookings.edu /articles/<slug>/ |
+| `/rand/articles` | RAND | P1 | rand.org /pubs/articles/2026/<slug>.html |
+| `/iter/news` | ITER | P4 | iter.org/rss.xml 官方 RSS 转发 |
+| `/isro/news` | ISRO | P3 | isro.gov.in 首页（相对 .html 文章） |
+
+### 保留直抓（SPA/反爬，RSSHub 同样抓不到，Python urllib 反而可行）
+- xAI/Moonshot/Zhipu/Alibaba：Next.js SPA，无静态文章链接
+- CGTN：SPA，/news/ 频道全 404
+- SpaceX/Rocket Lab：JS 渲染
+- Blue Origin：429 限流；SpaceNews：403；New Scientist：406

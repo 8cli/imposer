@@ -4,13 +4,15 @@
       "name": "Global Times",
       "url": "https://www.globaltimes.cn/",
       "kind": "china-official",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/globaltimes/news"
     },
     {
       "name": "Xinhua English",
       "url": "https://english.news.cn/home.htm",
       "kind": "china-official",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/xinhuaenglish/news"
     },
     {
       "name": "CGTN",
@@ -43,7 +45,8 @@
       "name": "Asian Military Review",
       "url": "https://www.asianmilitaryreview.com/",
       "kind": "independent",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/asianmilitaryreview/news"
     },
     {
       "name": "Naval News",
@@ -56,13 +59,15 @@
       "name": "DefenceTalk",
       "url": "https://www.defencetalk.com/",
       "kind": "independent",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/defencetalk/news"
     },
     {
       "name": "EurAsian Times",
       "url": "https://www.eurasiantimes.com/",
       "kind": "independent",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/eurasiantimes/news"
     },
     {
       "name": "Washington Post",
@@ -95,13 +100,15 @@
       "name": "Brookings",
       "url": "https://www.brookings.edu/",
       "kind": "thinktank",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/brookings/articles"
     },
     {
       "name": "RAND",
       "url": "https://www.rand.org/",
       "kind": "thinktank",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/rand/articles"
     },
     {
       "name": "CFR",
@@ -301,7 +308,8 @@
       "name": "ISRO",
       "url": "https://www.isro.gov.in/",
       "kind": "agency",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/isro/news"
     },
     {
       "name": "SpaceX",
@@ -359,7 +367,8 @@
       "name": "Xinhua Space",
       "url": "https://www.news.cn/english/",
       "kind": "china-official",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/xinhuaenglish/news"
     },
     {
       "name": "China Daily Sci",
@@ -388,19 +397,22 @@
       "name": "Global Times",
       "url": "https://www.globaltimes.cn/",
       "kind": "china-official",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/globaltimes/news"
     },
     {
       "name": "Xinhua",
       "url": "https://english.news.cn/home.htm",
       "kind": "china-official",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/xinhuaenglish/news"
     },
     {
       "name": "ITER",
       "url": "https://www.iter.org/",
       "kind": "agency",
-      "mode": "page"
+      "mode": "page",
+      "rsshub": "/iter/news"
     },
     {
       "name": "Phys.org",
@@ -427,7 +439,8 @@
       "name": "IEEE Spectrum",
       "url": "https://spectrum.ieee.org/feed/rss",
       "kind": "tech-media",
-      "mode": "rss"
+      "mode": "rss",
+      "rsshub": "/ieeespectrum/news"
     },
     {
       "name": "New Scientist",

@@ -314,7 +314,7 @@ def split_paragraphs(text: str, max_paras: int = 4) -> list[str]:
     return [p.strip() for p in paras if p.strip()][:max_paras]
 
 
-def write_plate(p: dict, idx: int, used_urls: list | None = None) -> str:
+def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int = 6) -> str:
     """一个版 → plates/pN.md 文本（linotype 字段格式）。
 
     主条若无带摘要素材则返回 ""（宁缺勿滥，跳过该版并告警）。
@@ -333,7 +333,7 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None) -> str:
     if not main:
         print(f"  ⚠️ 版 P{idx}: 无带摘要主条素材，跳过该版（宁缺勿滥）")
         return ""
-    briefs = pick_briefs(p["news"], {x["url"] for x in main}, 4, idx)
+    briefs = pick_briefs(p["news"], {x["url"] for x in main}, n_briefs, idx)
     if used_urls is not None:
         used_urls.extend(x["url"] for x in main)
         used_urls.extend(b["url"] for b in briefs)
@@ -359,7 +359,7 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None) -> str:
         out.append("")
     if briefs:
         out.append("BRIEFS:")
-        for b in briefs[:3]:
+        for b in briefs[:n_briefs]:
             out.append(f"**{b['title'][:60]}:** {b.get('summary', '')[:150]} — {b['source']}.")
     return "\n".join(out)
 
@@ -374,6 +374,9 @@ def write_plates(results: dict, out_dir: Path) -> None:
     plates_dir = out_dir / "plates"
     plates_dir.mkdir(parents=True, exist_ok=True)
     plate_names = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
+    # 简讯数按版（2026-08-06）：P1/P4 内容充足（3 条即可，6 条会溢出），
+    # P2/P3 主条素材池不足、需更多简讯补填充（6 条）
+    briefs_per_plate = {1: 3, 2: 6, 3: 6, 4: 3}
     seen = set()  # 四版池级已用 URL（终审 I-2 跨版去重）
     for plate, news in results.items():
         idx = plate_names.get(plate)
@@ -385,7 +388,7 @@ def write_plates(results: dict, out_dir: Path) -> None:
             print(f"  ⚠️ {plate}: 素材 URL 已全部被其他版使用（跨版去重），跳过")
             continue
         used_urls = []
-        text = write_plate({"news": pool}, idx, used_urls)
+        text = write_plate({"news": pool}, idx, used_urls, briefs_per_plate.get(idx, 6))
         if not text:
             continue  # write_plate 已告警（无带摘要主条）
         seen.update(used_urls)

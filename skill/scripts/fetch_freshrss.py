@@ -58,16 +58,25 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
 
-    # feed 名 → 版块映射
-    feed_to_plate = {}
+    # rsshub path → (版块, 源名) 映射（2026-08-06：同一 feed 可能服务多版块，
+    # 如 Global Times/Xinhua 同时在 P1/P3/P4——按 rsshub path 而非 feed 名映射，
+    # 每个版块的源条目独立取到同一 feed 内容，source 名用各自的源名）
+    path_to_sources = {}  # rsshub path → [(plate, src_name), ...]
     for plate, srcs in sources.items():
         for s in srcs:
             if s.get("rsshub"):
-                feed_to_plate[s["name"]] = plate
+                path_to_sources.setdefault(s["rsshub"], []).append((plate, s["name"]))
+    # feed URL → rsshub path（FreshRSS feed.url = http://172.17.0.1:1201<rsshub>）
+    feed_url_to_path = {}
+    for r in cur.execute("SELECT id, name, url FROM feed").fetchall():
+        u = r["url"] or ""
+        for path in path_to_sources:
+            if u.endswith(path):
+                feed_url_to_path[r["id"]] = path
 
     # 查最新文章（含全文），按 feed 归属
     rows = cur.execute("""
-        SELECT f.name AS feed_name, e.title, e.content, e.author, e.link, e.date,
+        SELECT e.id_feed, f.name AS feed_name, e.title, e.content, e.author, e.link, e.date,
                e.guid, e.is_read
         FROM entry e JOIN feed f ON e.id_feed = f.id
         ORDER BY e.id DESC
@@ -75,25 +84,26 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
 
     results = {}
     for r in rows:
-        plate = feed_to_plate.get(r["feed_name"])
-        if not plate:
+        path = feed_url_to_path.get(r["id_feed"])
+        if not path:
             continue
         content = r["content"] or ""
         text = re.sub(r"<[^>]+>", " ", content)
         text = re.sub(r"\s+", " ", text).strip()
-        entry = {
-            "title": r["title"] or "",
-            "url": r["link"] or r["guid"] or "",
-            "summary": text[:400] if text else "",
-            "fulltext": text if len(text) > MIN_FULLTEXT_CHARS else "",
-            "author": r["author"] or "",
-            "date": str(r["date"]) if r["date"] else "",
-            "source": r["feed_name"],
-            "kind": _kind_for_feed(r["feed_name"]),
-        }
-        results.setdefault(plate, []).append(entry)
-        if len(results[plate]) >= max_items * 5:
-            continue  # 每版留足候选
+        for plate, src_name in path_to_sources[path]:
+            entry = {
+                "title": r["title"] or "",
+                "url": r["link"] or r["guid"] or "",
+                "summary": text[:400] if text else "",
+                "fulltext": text if len(text) > MIN_FULLTEXT_CHARS else "",
+                "author": r["author"] or "",
+                "date": str(r["date"]) if r["date"] else "",
+                "source": src_name,
+                "kind": _kind_for_feed(src_name),
+            }
+            results.setdefault(plate, []).append(entry)
+            if len(results[plate]) >= max_items * 5:
+                continue  # 每版留足候选
 
     conn.close()
     # 按 sources.json 的版块顺序返回
