@@ -41,6 +41,12 @@ MAX_STALE_DAYS = 30
 # 素材用尽（版内无 ≥MIN_MAIN_WORDS 词的素材）时回退全池最优——宁缺毋滥的边界。
 MIN_MAIN_WORDS = 100
 
+# 主条正文按版上限（2026-08-06 修复：选材/正文用 fulltext 而非 summary）：
+#   P1 main-aside 主栏容量大 → 400 词（完整排，填满主栏消除左下角留白）
+#   P2-P4 等宽 3 栏容量 ~280 词 → 280 词（防溢出：
+#     P3 327 词实测 753pt > 742pt 溢出 141pt）
+MAX_MAIN_WORDS = {1: 400, 2: 280, 3: 280, 4: 280}
+
 # URL 日期路径兜底（终审 I-3）：China Daily 综合 RSS 部分条目 date 为空，
 # 但 URL 携带归档路径 —— /a/201712/12/（YYYYMM/DD）、/page/202608/（YYYYMM）、
 # /2026/08/、/2026/08/05/（YYYY/MM[/DD]）
@@ -190,6 +196,19 @@ def _dedup(items: list[dict]) -> list[dict]:
     return out
 
 
+def _content_words(item: dict) -> int:
+    """素材真实长度（2026-08-06 修复）：优先 fulltext（全文词数），
+    无 fulltext 才用 summary。
+
+    背景：fetch 层 summary 截到 400 字符（≈60-80 词），长文全在 fulltext
+    字段（P1 实测 379 条 ≥200 词全文）。此前按 summary 词数选主条，
+    永远选到短摘要 → 主条填不满版面（P1 84% 根因）。按 fulltext 选材
+    后主条才真正落到长文。
+    """
+    text = item.get("fulltext") or item.get("summary") or ""
+    return len(text.split())
+
+
 def _supply_tier(item: dict, slot: str) -> int:
     """按单供给槽位优先（终审 C-1c 加固，3 层）——槽位匹配优先于 kind_rank：
 
@@ -223,7 +242,9 @@ def _length_key(item: dict, slot: str) -> float:
     words = req.get("words") or [0, 0]
     spec_match = bool(req) and ((slot == "main" and words[1] >= 200)
                                 or (slot == "brief" and words[1] < 200))
-    w = len(item.get("summary", "").split())
+    # 供给素材（used=True）已交付改写稿，长度轴用交付词数（summary）匹配规格；
+    # 未供给素材用真实长度（fulltext 优先，2026-08-06 修复）——长文才排得上主条
+    w = len(item.get("summary", "").split()) if item.get("used") else _content_words(item)
     if item.get("used") and spec_match and words[1]:
         return abs(w - (words[0] + words[1]) / 2)
     return -w if slot == "main" else w
@@ -250,7 +271,7 @@ def pick_main_stories(news: list[dict], n: int = 2, plate: int = 1) -> list[dict
         _supply_tier(x, "main"),
         _length_key(x, "main"),        # 长度（主条长者先）先于信源层级（2026-08-06 去 china-official 优先）
         KIND_RANK.get(x["kind"], 9)))  # 同分决胜：亲中仍占优，但不再独占主条
-    big = [x for x in ordered if len(x["summary"].split()) >= MIN_MAIN_WORDS]
+    big = [x for x in ordered if _content_words(x) >= MIN_MAIN_WORDS]
     if len(big) >= n:
         # 2026-08-06: P1 main-aside 侧栏容量大 → 保持两长主条（侧栏填满）；
         # P2-P4 等宽 3 栏 → 主条1 长（≥250 词深稿）+ STORY-B 中等（150-250 词）——
@@ -262,8 +283,9 @@ def pick_main_stories(news: list[dict], n: int = 2, plate: int = 1) -> list[dict
             # STORY-B 选短稿（60-120 词，副条）——3 栏布局两个长主条必超容量
             # （P2 实测 334+297 词 → 907pt > 742pt 溢出 107%）。
             # P3/P4 短副条（78/75 词）不溢出——短副条是 3 栏布局的正确形态。
-            # 注意: 从全 ordered 池选（短稿不在 big 里，big 只含 ≥100 词）
-            short = [x for x in ordered if 60 <= len(x["summary"].split()) <= 120]
+            # 注意: 从全 ordered 池选（短稿不在 big 里，big 只含 ≥100 词）；
+            # 长度判定用 fulltext（2026-08-06：summary 一律 60-80 词，无区分度）
+            short = [x for x in ordered if 60 <= _content_words(x) <= 120]
             if short:
                 return [main1, short[0]]
         return big[:n]
@@ -394,21 +416,22 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
     out.append("DECK: " + _clean_deck(main[0].get("summary", ""), main[0]["title"]))
     out.append("BYLINE: " + byline_of(main[0]))
     out.append("BODY:")
-    # 主条正文按版控制（2026-08-06 血泪）：
-    #   P1 main-aside 主栏容量大 → 完整使用（max_paras=14，覆盖 400 词上限），
-    #     填满主栏消除左下角留白
-    #   P2-P4 等宽 3 栏容量 ~280 词 → 截到 280 词（防溢出：
+    # 主条正文（2026-08-06 修复：优先 fulltext 全文——summary 只截 400 字符
+    # ≈60-80 词，主条用摘要永远填不满版面；fulltext 才是真实报道长度）。
+    # 按版上限截断（血泪 #18/#19）：
+    #   P1 main-aside 主栏容量大 → 400 词（填满主栏消除左下角留白）
+    #   P2-P4 等宽 3 栏容量 ~280 词 → 280 词（防溢出：
     #     P3 327 词实测 753pt > 742pt 溢出 141pt）
     main_paras = 14 if idx == 1 else 12
-    main_body = main[0].get("summary", "")
-    if idx != 1 and len(main_body.split()) > 280:
-        # 按词界截到 280 词
+    cap = MAX_MAIN_WORDS.get(idx, 280)
+    main_body = main[0].get("fulltext") or main[0].get("summary", "")
+    if len(main_body.split()) > cap:
+        # 按词界截到 cap，尽量在句界截（句子完整性优先于字数）
         words = main_body.split()
-        cut = words[:280]
-        # 尽量在句界截
+        cut = words[:cap]
         joined = ' '.join(cut)
         last_sent = max(joined.rfind('. '), joined.rfind('! '), joined.rfind('? '))
-        if last_sent > 200:
+        if last_sent > cap * 0.7:
             joined = joined[:last_sent + 1]
         main_body = joined
     for para in split_paragraphs(main_body, max_paras=main_paras):
@@ -416,9 +439,20 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
     out.append("")
     # 副主条: STORY-B（build.py 解析后 P1 进侧栏 aside，P2-P4 渲染为 subheadline+正文）
     # 注意: STORY-B 后直接跟正文段，不能再写 "BODY:"（会把段落路由回主 body）
+    # 2026-08-06：正文同样 fulltext 优先（P1 侧栏容量大，第二条长文用全文截断填侧栏；
+    # P2-P4 副条按 fulltext 60-120 词选定，正文即全文长度）
     if len(main) > 1:
         out.append("STORY-B: " + _clean_headline(main[1]["title"]))
-        for para in split_paragraphs(main[1].get("summary", ""), max_paras=main_paras):
+        story_b = main[1].get("fulltext") or main[1].get("summary", "")
+        story_b_cap = 200 if idx == 1 else 120
+        if len(story_b.split()) > story_b_cap:
+            words = story_b.split()
+            joined = ' '.join(words[:story_b_cap])
+            last_sent = max(joined.rfind('. '), joined.rfind('! '), joined.rfind('? '))
+            if last_sent > story_b_cap * 0.7:
+                joined = joined[:last_sent + 1]
+            story_b = joined
+        for para in split_paragraphs(story_b, max_paras=main_paras):
             out.append(para)
         out.append("")
     if briefs:
@@ -438,9 +472,14 @@ def write_plates(results: dict, out_dir: Path) -> None:
     plates_dir = out_dir / "plates"
     plates_dir.mkdir(parents=True, exist_ok=True)
     plate_names = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
-    # 简讯数按版（2026-08-06）：P1/P4 内容充足（3 条即可，6 条会溢出），
-    # P2/P3 主条素材池不足、需更多简讯补填充（4 条——6 条在主条完整后溢出 137%）
-    briefs_per_plate = {1: 3, 2: 3, 3: 3, 4: 3}
+    # 简讯数按版（2026-08-06 fulltext 修复后实测）：
+    #   P1 main-aside 达标 97%（主条 359 + STORY-B 171 + 3 简讯已满版心）
+    #   P3 达标 99.9%（主条 265 + STORY-B 100 + 3 简讯恰满）
+    #   P2 89% / P4 90.7% —— 主条+副条偏短，需 4 条简讯补填充
+    #     （P2 缺 44.6pt、P4 缺 31.7pt；实测 +2 条（5 条）致 P2 溢出 744.5pt
+    #      > 742.6pt 且 autofit 压字号拖累 P3 掉到 90.6%——只 +1 条）
+    #   血泪 #16：inbrief 宏支持多组（每 3 条一组），3 条硬编码上限早已解除
+    briefs_per_plate = {1: 3, 2: 4, 3: 3, 4: 4}
     seen = set()  # 四版池级已用 URL（终审 I-2 跨版去重）
     for plate, news in results.items():
         idx = plate_names.get(plate)

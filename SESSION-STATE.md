@@ -1,7 +1,7 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 09:30 UTC — 第四轮：出报质量修复（实体清洗/标题截断/主条按版控制/左下角留白改善）
-> 状态：**全链路打通 + 出报质量修复**（imposer 54/54 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；首期实报 P3 达标、P1/P2/P4 84-89%——诚实缺口：P1 素材池极限；linotype 单一仓库 ~/news/latex）
+> 保存：2026-08-06 11:10 UTC — 第五轮：fulltext 选材修复（fill 84-89% → 4 版全达标 ≥95%）+ 视觉阈值对齐
+> 状态：**全链路打通 + 4 版填充全达标**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；首期实报 P1 98.7% / P2 100.2% / P3 95.6% / P4 99.85%，视觉验收 PASS；linotype 单一仓库 ~/news/latex）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 四轮）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
 
@@ -138,7 +138,39 @@ RSSHub(标题+链接) → FreshRSS 聚合(41 feed) + af-readability 全文入库
 - P1 主条池极限 359 词；P2-P4 短摘要多、长稿靠 supply 全文预取
 - **诚实结论**：当前 84-89% 是现有素材的最佳结果，到 95% 需补长文源（P1 军事深度稿）
 
-### 08-06 提交（imposer dde4ee9 + linotype ca16c17）
+### 08-06 第五轮：fulltext 选材修复（用户指正"为什么看摘要而不是全文长度？"）+ 视觉阈值对齐
+
+**根因（真正的逻辑缺陷）**：build_plates.py 全程用 `summary` 词数选材/排序，而 fetch 层把
+summary 截到 400 字符（≈60-80 词）——**长文全在 `fulltext` 字段**（P1 实测 379 条 ≥200 词
+全文躺着未用），主条永远选到短摘要 → 版面填不满（P1 84% 根因）。supply 的全文优先只对
+demand 补稿生效，成版器本身不用全文。
+
+**修复（build_plates.py）**：
+- 新增 `_content_words(item)`：fulltext 优先（无则回退 summary）
+- `_length_key` / `pick_main_stories` / `pick_briefs` 长度轴全部改用 fulltext 词数
+  （供给素材 used=True 仍按交付词数 summary 匹配规格距离）
+- 主条正文 `main[0].get("fulltext") or summary` + 按版上限截断（P1 400 词 / P2-P4 280 词，
+  句界优先）；STORY-B 同样 fulltext + cap（P1 侧栏 200 词 / P2-P4 120 词）
+- 简讯数按版差异化（血泪 #22 实测）：P1/P3 3 条已满版，P2/P4 各 4 条
+  （+2 条致 P2 溢出 744.5pt > 742.6 且 autofit 压字号拖累 P3 掉 9%）
+
+**结果（fill 84-89% → 4 版全达标）**：
+- P1 84% → **98.7%**（STORY-B 81→171 词全文填满侧栏——原先左下角留白彻底解决）
+- P2 89% → **100.2%**（+1 条 Gemini Robotics 简讯；vsplit 截断 1.4pt 不可见）
+- P3 达标 → **95.6%**（autofit 全局压字号所致，P2 收敛后可再回 99.9%）
+- P4 90.7% → **99.85%**（+1 条 GT 中国大使馆简讯）
+- **视觉验收 PASS**（两页无空白带）+ demand.json 无需求
+
+**pixelcheck 阈值对齐（linotype）**：
+- `min_gap` 8 → **12mm**（与 fill_min=0.95 对齐：12mm = 版心 261mm 的 4.6% < 5%）——
+  原先 8mm 会把 95% 达标底边（P3 9mm=4.4%）误报 FAIL；右半版顶部 9.7mm 是 KICKER
+  小字（79% 字号 + LetterSpace=12 太稀疏）被墨迹阈值吞的**误报**，12mm 后自然消掉
+- build.py 空白带行提取改正则 `^\s*(列\d+|[左右]半版|整页):`——argparse help 行
+  （含"空白带"/"mm"字样）不再误入报告
+- 教训：pixelcheck 的空白带阈值必须与 autofit 的 fill_min 对齐，否则"像素说空、
+  fill 说达标"的矛盾永存
+
+### 08-06 提交（imposer dde4ee9 → 353dca1 + linotype ca16c17）
 imposer: 6fc39d7 → 0fb273c → cd0d4c5 → f49940b → 6f2ddaf → 02eb47b → 88cdf12 → dde4ee9
   88cdf12 fix: P1 左下角留白（主条截断）+ P2-P4 双长主条溢出
   dde4ee9 fix: HTML 实体清洗 + 标题截断 + 主条按版控制
@@ -153,8 +185,9 @@ linotype: a9e3468 → 61ac1b2 → ca16c17
 - ✅ 文档诚实化：README×2 / HISTORY 声明与产物逐项比对通过（上轮虚假实证教训已纠正）
 - ✅ 公开仓库推送：imposer @ dde4ee9、linotype @ ca16c17（含 --demand + fill_min + inbrief 多组）
 - ✅ 持久化：linotype 统一单一仓库 ~/news/latex（副本 linotype-repo 已删，重启不丢）
-- ✅ 首期实报：~/news/daily/2026-08-06/out.pdf（2 页 A3 横版 4 版，P3 达标、P1/P2/P4 84-89%——诚实缺口 P1 素材池极限）
+- ✅ 首期实报：~/news/daily/2026-08-06/out.pdf（2 页 A3 横版 4 版，**P1 98.7% / P2 100.2% / P3 95.6% / P4 99.85% 全达标 ≥95%**，视觉验收 PASS，demand.json 无需求）
 - ✅ 出报质量修复：HTML 实体 0 残留、标题截断、主条按版控制（P1 主栏 53%→80%）
+- ✅ **第五轮 fulltext 选材修复**：fill 84-89% → 4 版全达标（选材长度轴 summary → fulltext；主条/STORY-B 正文全文优先 + 按版截断；简讯 P2/P4 4 条）+ pixelcheck 阈值对齐（min_gap 12mm）
 
 ## 四、关键架构决策
 
@@ -200,6 +233,10 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 18. **主条截断是 P1 左下角留白根因**——split_paragraphs max_paras=4/8 把 319 词截到 108/182 词，main-aside 主栏排不满；主条必须完整（max_paras=14）
 19. **3 栏布局主条上限 ~280 词**——P3 327 词实测 753pt > 742pt 溢出 141pt；P2-P4 主条需按词界截断到 280，P1 main-aside 容量大才可完整 400 词
 20. **超长标题要截断**——84 字符 ISRO 全名在 3.58× display 字号排版过大、单词间距不协调；_clean_headline 截 60 字符
+21. **选材必须看 fulltext 不看 summary**——fetch 层 summary 截 400 字符（≈60-80 词）无区分度，长文全在 fulltext（P1 实测 379 条 ≥200 词全文躺着未用）；按 summary 选主条永远填不满版面（P1 84% 根因）。_content_words 全文优先是成版第一原则
+22. **简讯数按版差异化，加多了适得其反**——P2/P4 缺 44/32pt 各 +1 条（4 条）即达标；+2 条（5 条）致 P2 溢出 744.5pt > 742.6，且 autofit 压字号拖累 P3 从 99.9% 掉到 90.6%。每次改版后看 autofit 收敛，别凭感觉加内容
+23. **pixelcheck min_gap 必须与 fill_min 对齐**——8mm 会把 95% 达标底边（9mm=4.4% < 5%）误报 FAIL；对齐 12mm（= 版心 261mm 的 4.6%）后"像素说空、fill 说达标"矛盾消除。KICKER 小字（79% 字号）稀疏也会被墨迹阈值吞成"空白带"——先放大确认再动内容
+24. **argparse help 含 % 需 %% 转义**（argparse 的 help 是 % 格式化字符串）+ build.py 提取报告行须用正则精确匹配（`^\s*(列\d+|[左右]半版|整页):`）——help 文本含"空白带"/"mm"字样会误入视觉报告
 
 ## 六、目录状态
 
@@ -251,4 +288,4 @@ GitHub：
 
 ## 八、诚实的话
 
-Imposer 的核心价值——需求-供给闭环——**机制完整、实证可复现、文档诚实**。08-06 四轮把供给从"实时抓取分析"升级为 **FreshRSS 聚合 + 全文入库 + 查库选文** 的经济架构，方向正确且已验证。af-readability 根因修复（全文覆盖 11.3% → 94.8%）、直抓源迁入 RSSHub（53/66 源走聚合）、首期实报跑通、linotype 统一单一仓库、出报质量修复（实体清洗/标题截断/主条控制）——机制与质量都已打磨。**诚实短板更新为三条**：**① P1 主条池极限**（最长 359 词，主栏 80% 填不满，填充 84%——到 95% 需补军事长文源）；**② P2/P4 同样 87%/89% 未到 95%**（短摘要多、长稿靠全文预取，素材总量不足）；**③ 素材质量仍受源站活跃度约束**（physorg/techxplore 曾 429 限流；13 源保留直抓）。审料门（agent 引导）是质量兜底。真正的完善需要每日真实产出积累反馈，如同 linotype 的 0 star 起点——社区验证是下一步。**下一重点：P1 军事长文源扩充（填满主栏到 95%）+ 每日实报常态化**。
+Imposer 的核心价值——需求-供给闭环——**机制完整、实证可复现、文档诚实**。08-06 五轮把供给从"实时抓取分析"升级为 **FreshRSS 聚合 + 全文入库 + 查库选文** 的经济架构，方向正确且已验证。af-readability 根因修复（全文覆盖 11.3% → 94.8%）、直抓源迁入 RSSHub（53/66 源走聚合）、首期实报跑通、linotype 统一单一仓库、出报质量修复（实体清洗/标题截断/主条控制）、**第五轮 fulltext 选材修复**——机制与质量都已打磨。**填充率已达 95% 目标**（P1 98.7 / P2 100.2 / P3 95.6 / P4 99.85，视觉验收 PASS）——第五轮把"P1 素材池极限 359 词"的旧结论推翻：**素材池长文一直充足（P1 379 条 ≥200 词全文），短板不是源而是选材逻辑看错了字段**。剩余诚实短板：**① P3 95.6% 是 autofit 全局压字号的下限**（P2 溢出 1.4pt 微超所致，P2 收敛可回 99.9%）；**② 素材质量仍受源站活跃度约束**（physorg/techxplore 曾 429 限流；13 源保留直抓）；**③ 简讯补版依赖 supply 改写**（本轮的 Gemini Robotics/GT 大使馆是 agent 按 60-90 词压缩交付）。审料门（agent 引导）是质量兜底。真正的完善需要每日真实产出积累反馈，如同 linotype 的 0 star 起点——社区验证是下一步。**下一重点：每日实报常态化 + 检验 P2 溢出微调（换更短简讯消除 1.4pt 截断）**。

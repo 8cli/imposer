@@ -295,6 +295,55 @@ def test_topic_to_plate_tech_mapping():
     check(bp.TOPIC_TO_PLATE.get("china-tech") == 4, "china-tech 兼容映射到版 4")
 
 
+
+def test_main_story_prefers_fulltext_length():
+    """2026-08-06 修复：选材长度轴用 fulltext 而非 summary——summary 截到 400
+    字符（≈60-80 词）无区分度，长文全在 fulltext。短摘要+长全文应选中为主条。"""
+    news = [
+        {"title": "Short summary but long fulltext", "url": "https://e.com/f1",
+         "summary": "word " * 70, "fulltext": "para " * 300,
+         "author": "", "source": "CSIS", "kind": "thinktank"},
+        {"title": "Short brief-like", "url": "https://e.com/f2",
+         "summary": "word " * 70, "author": "", "source": "GT", "kind": "china-official"},
+    ]
+    mains = bp.pick_main_stories(news, 1, plate=1)
+    check(mains[0]["title"] == "Short summary but long fulltext",
+          f"fulltext 长文应入选主条，实际 {mains[0]['title']!r}")
+
+
+def test_content_words_prefers_fulltext():
+    """_content_words：有 fulltext 用全文词数，无则回退 summary。"""
+    it = {"summary": "word " * 70, "fulltext": "para " * 400}
+    check(bp._content_words(it) == 400, f"_content_words 应取 fulltext 词数: {bp._content_words(it)}")
+    it2 = {"summary": "word " * 70}
+    check(bp._content_words(it2) == 70, f"无 fulltext 应回退 summary: {bp._content_words(it2)}")
+
+
+def test_write_plate_body_uses_fulltext_with_cap():
+    """主条正文 fulltext 优先 + 按版上限截断：P1 400 词 / P2 280 词。"""
+    # P2: 500 词全文 → BODY 截到 ~280 词
+    sent = "word " * 23 + "end. "  # 每段约 24 词（真实句子长度）
+    news2 = [{"title": "Long Tech Story", "url": "https://e.com/c1",
+              "summary": "Lead para. " + "word " * 60,
+              "fulltext": sent * 18,  # 432 词
+              "author": "", "source": "IEEE", "kind": "tech-media"}]
+    plate2 = bp.write_plate({"news": news2}, 2)
+    body2 = plate2.split("BODY:")[1].split("STORY-B:")[0]
+    words2 = len(body2.split())
+    check(words2 <= 285, f"P2 主条应截到 ~280 词，实际 {words2}")
+    check(words2 >= 200, f"P2 主条应保留主体内容，实际 {words2}")
+    # P1: 600 词全文 → BODY 截到 ~400 词
+    news1 = [{"title": "Long World Story", "url": "https://e.com/c2",
+              "summary": "Lead para. " + "word " * 60,
+              "fulltext": sent * 30,  # 720 词
+              "author": "", "source": "DefenceTalk", "kind": "independent"}]
+    plate1 = bp.write_plate({"news": news1}, 1)
+    body1 = plate1.split("BODY:")[1].split("STORY-B:")[0]
+    words1 = len(body1.split())
+    check(words1 <= 405, f"P1 主条应截到 ~400 词，实际 {words1}")
+    check(words1 >= 300, f"P1 主条应保留主体内容，实际 {words1}")
+
+
 def main():
     test_topic_to_plate_tech_mapping()
     test_tech_gate_p4_international()
@@ -315,12 +364,15 @@ def main():
     test_cross_plate_dedup()
     test_main_min_words_gate()
     test_pick_briefs_nasa_beats_china_official()
+    test_main_story_prefers_fulltext_length()
+    test_content_words_prefers_fulltext()
+    test_write_plate_body_uses_fulltext_with_cap()
     if _FAILURES:
         print(f"FAILED ({len(_FAILURES)} 项):")
         for f in _FAILURES:
             print("  -", f)
         sys.exit(1)
-    print(f"ALL TESTS PASSED ({19} tests)")
+    print(f"ALL TESTS PASSED ({22} tests)")
 
 
 if __name__ == "__main__":
