@@ -13,6 +13,15 @@ FreshRSS 信息（Docker :1202，SQLite）：
   库:   /var/www/FreshRSS/data/users/imposer/db.sqlite（entry 表 content 含全文）
   注:   用 docker cp 拷贝库再读（避免容器内 sqlite3 客户端缺失），
         每次查询拷贝最新库（FreshRSS 定时刷新 CRON_MIN=0,30）。
+
+af-readability 全文扩展（Niehztog/freshrss-af-readability v0.4）：
+  安装: extensions/af_readability/（vendor/ 自带 Fivefilters Readability.php，纯客户端无外部依赖）
+  启用: 用户 data/users/imposer/config.php 两处缺一不可——
+    1) 'extensions_enabled' => array('Af_Readability' => true)  ← 决定扩展加载
+    2) 'ext_af_readability_categories' => '{"2":true,"3":true,"4":true,"5":true}'
+       ← JSON 字符串！扩展用 attributeString() 读，PHP 数组格式读不到 → 静默跳过所有文章
+       （2026-08-06 血泪：此格式坑 + 容器重建丢扩展文件，导致 88.7% 入库无全文）
+  只处理新入库文章：改配置后需清空 entry 表 + 重置 feed.lastUpdate 全量重灌（见 SESSION-STATE）
 """
 import argparse
 import json

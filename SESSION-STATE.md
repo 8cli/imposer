@@ -1,7 +1,7 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 12:10 UTC — 第二轮：67 源信源 + FreshRSS 聚合架构 + Readability 全文
-> 状态：**FreshRSS 经济架构已验证**（imposer 54/54 + linotype 25/25；双仓库已推送；FreshRSS 入库 1178 篇 + 查库选文打通）
+> 保存：2026-08-06 13:10 UTC — 第二轮：67 源信源 + FreshRSS 聚合架构 + Readability 全文 + **af-readability 根因修复（全文覆盖 11.3% → 94.8%）**
+> 状态：**FreshRSS 经济架构已验证**（imposer 54/54 + linotype 25/25；双仓库已推送；FreshRSS 入库 1151 篇 + 1091 篇全文（94.8%）+ 查库选文打通；P1 军事全文短板已消除）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 三轮）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 6fc39d7）+ **8cli/linotype**（main @ a9e3468）
 
@@ -77,8 +77,7 @@ RSSHub(标题+链接) → FreshRSS 聚合(41 feed) + af-readability 全文入库
 ```
 - FreshRSS Docker :1202（持久化卷 + CRON_MIN=0,30 定时刷新），SQLite，1178 篇入库
 - **直接查 SQLite 优于 API**（用户提醒：API 的 toGReader 不返回 content；SQLite entry 表 content 含全文）
-- af-readability（Fivefilters Readability.php）对 P2 成功（OpenAI/Anthropic/Wired 79 篇全文），P3 太空源失败
-- **混合提取**：P3 用 imposer readability-lxml 补全文（NASA 493 词、JAXA 1197 词）——supply 全文预取机制衔接
+- **af-readability 根因修复（2026-08-06 午后，全文覆盖 11.3% → 94.8%）**：早先"af-readability 只对 P2 成功、P3 太空源失败"的归因**错误**——真相是配置格式坑：`ext_af_readability_categories` 必须是 **JSON 字符串**（`'{"2":true,"3":true,"4":true,"5":true}'`），扩展用 `attributeString()` 读，PHP 数组格式读不到 → 配置全空 → 所有文章静默跳过。加上三次容器重建丢了扩展文件 + `extensions_enabled` 空，两层叠加导致 88.7%（1045/1178）入库无全文。修复：重装 Niehztog/freshrss-af-readability v0.4（⭐103，PHP 8.1+/dom/xml/curl/mbstring 已满足，纯客户端无外部依赖）→ config.php 两处配置（enabled + JSON 字符串）→ 清空 entry + 重置 lastUpdate 全量重灌 → **1091/1151 篇全文（94.8%）**，P1 军事（CFR 66/68、CSIS 66/67、Naval News 15/15）与 P3 太空（NASA/ESA/JAXA 全 100%）短板全消。唯一 0 全文：NYT（付费墙，预期）。**教训**：FreshRSS 扩展的 per-feed 配置存 config.php 顶层 `ext_` 键，值格式是 JSON 字符串不是 PHP 数组；容器重建会丢扩展与配置，重建后必须两步都配（详见 fetch_freshrss.py 头注释）
 - 四版主条供给验证：P2 Google Research 1296 词、P3 JAXA 1197、P4 Nature 1222；**P1 军事全文弱（CFR 5 词，待补）**
 
 ### 08-06 提交（12 个，imposer @ 6fc39d7）
@@ -170,8 +169,8 @@ GitHub：
 - ✅ **全文优先供给**（2026-08-05 晚间落地）：`fetch_fulltext()` + `supply.py fulltext_fn`——主条/深度规格（≥250 词）缓存只有短摘要时自动抓全文压缩（摘要兜底），实测 66 词摘要 → 272 词全文。缓存 `fulltext` 字段跨轮复用
 - ✅ **P4 放宽**（2026-08-05 晚间落地）：中国科技 + 国际科技突破（核聚变等）——linotype 发 `topic:"tech"`/`min_kind:"tech-media"`，sources.json 加 ITER/Phys.org/TechXplore/Nature/IEEE Spectrum/New Scientist（实测 P4 池 80 条）；`_tech_gate` 正向题材门挡国际金融稿
 - ✅ **本机 RSSHub 全量接入**（2026-08-06 早落地）：**源码 dev 模式**（`~/news/rsshub-dev/start.sh`，端口 1201 局域网监听 `*:1201`，crontab @reboot 自启）——dev 模式动态加载 `lib/routes/` 路由。**34 源走 RSSHub**：社区现成 22（OpenAI/Anthropic/NYT/VOA/CSIS/NVIDIA 等）+ **自定义 2**（`/cnsa/news` P3 中国航天官方最大缺源补齐、`/esa/newsroom` ESA 新闻稿带日期）+ **fix 10**（社区路由失效的 tassfix/cfrfix/microsoftfix/githubfix/nasafix/chinadailyfix/scmpfix/naturefix/yahoofix/washingtonpostfix，RSS proxy 带浏览器 UA，全部实测可用）。26 源直抓（GT/Xinhua/CSIS 等无社区路由，或 spacenews/newscientist 反爬 RSSHub 客户端但 Python 直抓可行）。**路由备份**：全部自定义路由在 `docs/rsshub-routes/`（76 文件 + README），仓库自包含。Docker 容器/镜像/卷已全部清除。**教训**：官方 Docker 镜像只带 prod 构建（路由编译进 dist）；可扩展的是源码 dev 模式 / npm 包 registerRoute；社区路由常失效（10 个空）需 fix 路由补位；反爬是客户端特定（RSSHub got 403 vs Python 200）；新增路由目录需重启 dev server
-- ✅ **FreshRSS 经济架构**（2026-08-06 落地）：Docker :1202（持久化卷 + CRON_MIN=0,30）聚合 41 RSSHub feed，af-readability（Fivefilters Readability.php）全文入库 SQLite（1178 篇）；`fetch_freshrss.py` 直接查库选文（用户洞察：API 不返回 content，SQLite 直查最可靠）。**待办**：P1 军事全文弱（CFR 提取失败）、P3 太空源 af-readability 失败（已用 readability-lxml 混合补）
-- **P1 军事全文**（下一重点）：CFR 等军事源 Readability 提取失败（全文 5 词）——需换源或针对性提取
+- ✅ **FreshRSS 经济架构**（2026-08-06 落地）：Docker :1202（持久化卷 + CRON_MIN=0,30）聚合 41 RSSHub feed，af-readability（Fivefilters Readability.php）全文入库 SQLite（1178 篇）；`fetch_freshrss.py` 直接查库选文（用户洞察：API 不返回 content，SQLite 直查最可靠）。**08-06 午后根因修复**：全文覆盖 11.3% → **94.8%**（见上"af-readability 根因修复"条目）——P1 军事全文弱、P3 af-readability 失败两个待办**已解决**，NYT 付费墙 0 全文属预期
+- **P1 军事全文**（✅ 已解决，2026-08-06 午后）：CFR 66/68、CSIS 66/67、Naval News 15/15、Asia Times 112/112——配置格式修复后全量提取成功
 - **P3 中国航天新源**：P3 新鲜 china-official 素材仍为零（全被 2017 归档过滤）——需补充活跃中国航天英文源（CNSA 英文站更新慢）
 - **topic 信号增强**：综合 RSS 仍会泄漏非科技稿（题材门已兜底主要路径）——可进一步按版块重整 sources.json
 - **审料门自动化**：agent 引导式闭环已就位，可进一步自动预审（URL 合法性/题材/时效）减少人工
@@ -180,4 +179,4 @@ GitHub：
 
 ## 八、诚实的话
 
-Imposer 的核心价值——需求-供给闭环——**机制完整、实证可复现、文档诚实**。08-06 第二轮把供给从"实时抓取分析"升级为 **FreshRSS 聚合 + 全文入库 + 查库选文** 的经济架构，方向正确且已验证（P2/P3/P4 主条全文可达）。但仍有三处诚实短板：**① P1 军事全文弱**（CFR 等源 Readability 提取失败，5 词全文供不起主条）；**② af-readability 对部分源失败**（NASA/ESA 等太空源需 readability-lxml 混合补）；**③ 素材质量仍受源站活跃度约束**。审料门（agent 引导）是质量兜底。真正的完善需要每日真实产出积累反馈，如同 linotype 的 0 star 起点——社区验证是下一步。**下一重点：P1 军事全文补齐 + 首期 2026-08-06 实报跑通（fill_min=0.95 验证填充 ≥95%）**。
+Imposer 的核心价值——需求-供给闭环——**机制完整、实证可复现、文档诚实**。08-06 第二轮把供给从"实时抓取分析"升级为 **FreshRSS 聚合 + 全文入库 + 查库选文** 的经济架构，方向正确且已验证。午后的 af-readability 根因修复（配置格式 JSON 字符串 + 容器重建丢配置两步坑）把全文覆盖从 11.3% 拉到 **94.8%**——早先"P1 军事全文弱、P3 太空源失败"两个待办**已消除**（真实归因：扩展从未生效，而非源站问题）。**诚实短板更新为两条**：**① NYT 付费墙全文 0**（Readability 提取不了，P1 需换源或接受摘要）；**② 素材质量仍受源站活跃度约束**。审料门（agent 引导）是质量兜底。真正的完善需要每日真实产出积累反馈，如同 linotype 的 0 star 起点——社区验证是下一步。**下一重点：首期 2026-08-06 实报跑通（fill_min=0.95 验证填充 ≥95%）**。
