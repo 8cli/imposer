@@ -334,6 +334,14 @@ def fetch_all(sources: dict, out_dir: Path, max_workers: int = 8) -> dict:
                 # → 主动补抓首段摘要，避免空摘要素材无法成版
                 if not n.get("summary", "").strip():
                     n["summary"] = _fetch_summary(n["url"])
+                # 隐患 #56 修复: fetch_rss 只产 summary 无 fulltext（fetch_page 有）——
+                # 走 RSS 模式的主条 BODY 只能 60-80 词摘要，版面填不满。对称补抓
+                # 全文（Readability，与 fetch_page 同路径）。失败静默（摘要兜底，
+                # 不中断整轮——与 supply 的 fulltext_fn 同语义）。
+                if src.get("mode") == "rss" and not n.get("fulltext"):
+                    ft = fetch_fulltext(n["url"])
+                    if ft:
+                        n["fulltext"] = ft
             return plate, news
         except Exception as e:
             print(f"  ⚠️ {src['name']} 抓取异常: {e}")

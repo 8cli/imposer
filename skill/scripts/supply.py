@@ -198,6 +198,10 @@ if __name__ == "__main__":
     ap.add_argument("fetch_results_json")
     ap.add_argument("sources_json")
     ap.add_argument("out_dir")
+    ap.add_argument("--write-back", action="store_true",
+                    help="把供给结果（used=True + request 标记）写回 fetch_results.json——"
+                         "headless cron 无 agent 编排时的持久化兜底（隐患 #57 修复："
+                         "原只 stdout 输出，used 持久化依赖编排层，断链即跨轮重复供给）")
     args = ap.parse_args()
     demand = json.load(open(args.demand_json))
     cache = json.load(open(args.fetch_results_json))
@@ -207,4 +211,21 @@ if __name__ == "__main__":
                               fulltext_fn=fetch_fulltext)
     for plate, items in results.items():
         print(f"{plate}: 供给 {len(items)} 条 — {[i['title'][:40] for i in items]}")
+    if args.write_back:
+        # 回写缓存：按 URL 原地更新（血泪 #13: 不可 append——同 URL 双条目
+        # 致 _dedup 保留旧摘要，供给素材永不进版）
+        for plate, items in results.items():
+            for it in items:
+                for c in cache.get(plate, []):
+                    if c["url"] == it["url"]:
+                        c["used"] = True
+                        c["request"] = it["request"]
+                        if it.get("summary") and len(it["summary"]) > len(c.get("summary", "")):
+                            c["summary"] = it["summary"]  # 改写交付稿
+                        if it.get("fulltext"):
+                            c["fulltext"] = it["fulltext"]  # 预取全文
+                        break
+        with open(args.fetch_results_json, "w", encoding="utf-8") as f:
+            json.dump(cache, f, ensure_ascii=False, indent=2)
+        print(f"✅ 已回写 {args.fetch_results_json}（{sum(len(v) for v in results.values())} 条标记 used）")
     print(json.dumps(results, ensure_ascii=False, indent=2))
