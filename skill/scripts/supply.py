@@ -13,6 +13,12 @@ from build_plates import TOPIC_TO_PLATE, _topic_penalty, _tech_gate, is_stale  #
 _LATIN_RE = re.compile(r"[A-Za-z]")
 
 
+# 信源层级（与 build_plates.KIND_RANK 一致；模块级供预取/匹配共用，2026-08-06）
+MIN_KIND_RANK = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
+                 "china-ai": 4, "independent": 5, "tech-media": 6, "aggregator": 7,
+                 "western": 8}
+
+
 def _is_english(text: str, threshold: float = 0.85) -> bool:
     """粗略英文判定：拉丁字母占非空白字符比例 ≥ threshold（与 build_plates 同逻辑）。
 
@@ -37,9 +43,7 @@ def match_cache(request: dict, cache: list[dict], used_urls: set,
     全文抓取富集后，主条规格直接命中全文而不重复抓取；全文命中仍需 needs_rewrite
     （正文仍是摘要，需压缩全文回填 summary，只压缩不扩写）。
     """
-    min_kind_rank = {"china-official": 0, "thinktank": 1, "agency": 2, "company": 3,
-                     "china-ai": 4, "independent": 5, "tech-media": 6, "aggregator": 7,
-                     "western": 8}
+    min_kind_rank = MIN_KIND_RANK  # 模块级（预取也用它）
     # 题材过滤（终审 I-4）：demand 的 topic → 版号 → 负向关键词；明显不相关不补稿
     plate = TOPIC_TO_PLATE.get(request.get("topic", ""), 1)
     best_fallback = None
@@ -64,12 +68,16 @@ def match_cache(request: dict, cache: list[dict], used_urls: set,
                 item["needs_rewrite"] = True
                 item["target_words"] = request["words"]
             return item
-        # 近似匹配：同 kind 层级内，正文词数离目标区间最近的（供改写）
+        # 近似匹配：同 kind 层级内，优先选全文/正文词数 ≥ 下限的（主条素材要够长），
+        # 其次才按距离 target 最近（2026-08-06：全文预取后 fallback 应选长全文，
+        # 否则 CFR 68 词摘要抢走 DefenceTalk 400 词全文的主条槽）
         if allow_rewrite and kind_ok:
             target_mid = (request["words"][0] + request["words"][1]) / 2
             dist = abs(words - target_mid)
-            if best_dist is None or dist < best_dist:
-                best_dist = dist
+            # 达标优先：正文 ≥ 下限的候选排最前（满分），否则按距离
+            score = 0 if words >= request["words"][0] else dist + 1000  # 未达标大幅落后
+            if best_dist is None or score < best_dist:
+                best_dist = score
                 best_fallback = item
     if best_fallback:
         used_urls.add(best_fallback["url"])
@@ -110,6 +118,41 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
         supplied = []
         for req in info.get("requests", []):
             for _ in range(req.get("count", 1)):
+                # 主条/深度规格全文预取（2026-08-06）：抓缓存里前 N 个候选的全文，
+                # 选全文最长者——充分利用信源，避免"最优候选全文短"导致薄主条。
+                # 只在缓存候选的摘要都 < 需求下限时触发（达标素材无需预取）。
+                if (req["words"][0] >= 250 and fulltext_fn
+                        and not any(len((x.get("fulltext") or x.get("summary", "")).split()) >= req["words"][0]
+                                    for x in plate_cache if x["url"] not in used)):
+                    plate_no = TOPIC_TO_PLATE.get(req.get("topic", ""), 1)
+                    best_item, best_w = None, 0
+                    # 预筛选：英文 + 题材匹配 + kind 达标 + 未用（避免抓阿拉伯语/题材不符的占位）
+                    prefetch_cands = [
+                        c for c in plate_cache
+                        if c["url"] not in used and not is_stale(c)
+                        and _is_english(c.get("title", "") + " " + c.get("summary", ""))
+                        and not _topic_penalty(c.get("title", ""), plate_no)
+                        and not _tech_gate(c, plate_no)
+                        and MIN_KIND_RANK.get(c.get("kind"), 9) <= MIN_KIND_RANK.get(req["min_kind"], 9)
+                    ]
+                    for cand in prefetch_cands[:15]:  # 预筛选后前 15 个
+                        w = 0
+                        if cand.get("fulltext"):
+                            w = len(cand["fulltext"].split())
+                        else:
+                            try:
+                                text = fulltext_fn(cand["url"])
+                                if text and len(text.split()) > len(cand.get("summary", "").split()):
+                                    cand["fulltext"] = text  # 全文写回缓存 item（match_cache 按全文词数匹配）
+                                    w = len(text.split())
+                            except Exception:
+                                pass
+                        if w > best_w:
+                            best_w, best_item = w, cand
+                        if best_w >= req["words"][1]:
+                            break  # 已达标，不再多抓
+                    if best_item and best_item.get("fulltext"):
+                        print(f"  ✅ {req['type']} 全文预取: {best_item['source']} {len(best_item['fulltext'].split())}词")
                 item = match_cache(req, plate_cache, used, allow_rewrite)
                 if item is None and fetch_fn:  # 缓存不足 → 定向抓取
                     item = fetch_fn(plate, req, sources, out_dir)
@@ -121,7 +164,7 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
                 if item:
                     used.add(item["url"])  # fetch 素材也记 used，防重复供给
                     item["used"] = True    # 持久化标记：编排层回写缓存后，第 2 轮不再重复供给（终审 C-1b）
-                    item["request"] = req  # 原条目也挂 request：成版 _dedup 保留原条目时槽位优先不丢失（终审 C-1c）
+                    item["request"] = req  # 原条目也挂 request：成版 _dedup 保留原条目时槽位优先不丢失（终审 C-1c")
                     # 全文优先（用户决策 2026-08-05）：主条/深度规格缓存只有短摘要 → 抓全文
                     if (item.get("needs_rewrite") and not item.get("fulltext")
                             and req["words"][0] >= 250 and fulltext_fn):

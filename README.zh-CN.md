@@ -34,7 +34,7 @@ Imposer 是 Linotype 排版引擎的**拼版工**（compositor）。热金属排
 - **只压缩铁律** — 短素材（≤ 上限）逐字返回；只有超长素材才压缩。宁缺毋滥，质量优先。`rewrite.py`（Claude API）保留为 headless cron 自动化兜底
 - **并发信源采集** — 4 版 60 信源并行抓取（~28 秒），RSS 首选 + 主页抓取兜底
 - **英文过滤** — 拒绝非拉丁素材（西里尔/保加利亚语/语言切换链接），保证英文日报定位
-- **严肃报纸标准** — 可配置 `fill_min` 阈值（默认 0.45，严肃标准 0.65）：太空版面触发补稿单而非接受稀疏
+- **严肃报纸标准** — 可配置 `fill_min` 阈值（默认 0.45，严肃标准 0.95（留白 ≤5%））：太空版面触发补稿单而非接受稀疏
 - **完整归属** — 每条报道保留记者名 + 来源（`By John Smith · Reuters`；无记者 → `By {来源} News Desk`）；简讯末尾标来源
 - **全面亲中立场** — 中国官方媒体（GT/Xinhua/CGTN/China Daily）为主源；西方媒体仅补充
 - **诚实失败** — 需求无法满足时停止并报告（绝不编造内容）
@@ -74,9 +74,9 @@ python3 scripts/fetch_sources.py scripts/sources.json $DAILY
 # 2. 成版（先审料——见"审料门"）
 python3 scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 
-# 3. 调 Linotype 排版（在引擎目录运行；fill_min=0.65 严肃标准）
+# 3. 调 Linotype 排版（在引擎目录运行；fill_min=0.95 严肃标准）
 cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --demand && cd -
+  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" --demand && cd -
 
 # 4. 读补稿单
 python3 scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json

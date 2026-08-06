@@ -33,7 +33,7 @@ Its core differentiator is the **demand-supply contract**: Linotype is the deman
 - **Compress-only iron rule** — short stories (≤ word cap) are returned verbatim; only over-length stories are compressed. Quality over forced filling. `rewrite.py` (Claude API) remains as an optional fallback for headless cron automation
 - **Concurrent source collection** — 60 sources across 4 sections fetched in parallel (~28s), RSS-first with page-scraping fallback
 - **English-only filter** — rejects non-Latin material (Cyrillic, Bulgarian, language-switcher links) to preserve the English-daily positioning
-- **Serious-newspaper standard** — configurable `fill_min` threshold (default 0.45, serious standard 0.65): underfilled plates trigger order sheets instead of accepting sparse pages
+- **Serious-newspaper standard** — configurable `fill_min` threshold (default 0.45, serious standard 0.95 (≤5% whitespace)): underfilled plates trigger order sheets instead of accepting sparse pages
 - **Full attribution** — every story keeps reporter name + source (`By John Smith · Reuters`; no byline → `By {source} News Desk`); briefs carry source at the end
 - **China-friendly editorial stance** — Chinese official media (GT/Xinhua/CGTN/China Daily) are primary sources; Western media supplement only
 - **Honest failure** — no demand can be met → stops and reports (never fabricates content)
@@ -73,9 +73,9 @@ python3 scripts/fetch_sources.py scripts/sources.json $DAILY
 # 2. Compose plates (review material first — see "review gate")
 python3 scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 
-# 3. Typeset with Linotype (run in engine dir; fill_min=0.65 serious standard)
+# 3. Typeset with Linotype (run in engine dir; fill_min=0.95 serious standard)
 cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --demand && cd -
+  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" --demand && cd -
 
 # 4. Read the order sheet
 python3 scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json

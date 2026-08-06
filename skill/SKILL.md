@@ -25,9 +25,9 @@ python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
 python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 # 4. 调 linotype 排版（autofit 默认开 + --demand 输出补稿单）
 #    注意: linotype build.py 需在引擎目录运行（cwd 须含 linotype.cls）
-#    fill_min=0.65 严肃报纸标准：空白多则发补稿单（默认 0.45 宽松）
+#    fill_min=0.95 严肃报纸标准：空白多则发补稿单（默认 0.45 宽松）
 cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --visual --demand > $DAILY/build.log 2>&1 && cd -
+  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" --visual --demand > $DAILY/build.log 2>&1 && cd -
 # 5. 读需求 → 版面健康报告 + 补稿单
 python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
 # 6. 需求-供给闭环（agent 执行改写——主路径）→ 见下节"闭环循环（agent 执行）"
@@ -68,7 +68,7 @@ SSE 解析/CLI 污染一堆坑，且是绕路）。`supply.py` 输出 `needs_rew
 6. **重排 + 重读需求**：
    ```bash
    cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
-     --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.65" --demand > $DAILY/build.log 2>&1 && cd -
+     --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" --demand > $DAILY/build.log 2>&1 && cd -
    python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
    ```
 7. demand.json 仍有需求 → 回到第 1 步（≤2 轮）。

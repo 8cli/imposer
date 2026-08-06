@@ -25,7 +25,7 @@ Request types by deficit (Linotype `estimate_requests`):
 
 Topic / min_kind per plate: P1 world/military + china-official · P2 ai/tech + company · P3 space + agency · P4 china-tech + china-official.
 
-`fill_min` is configurable via `--docopts fill_min=0.65` (serious-newspaper standard). Default 0.45 preserves Linotype's original behavior.
+`fill_min` is configurable via `--docopts fill_min=0.95` (serious-newspaper standard (≤5% whitespace)). Default 0.45 preserves Linotype's original behavior.
 
 ## Compress-only iron rule (user decision 2026-08-05; agent-executed 2026-08-05)
 

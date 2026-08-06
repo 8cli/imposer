@@ -17,7 +17,8 @@ from pathlib import Path
 
 UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"
 TIMEOUT = 8
-SUMMARY_TOP_N = 2   # fetch_page 只对前 N 条候选抓首段摘要（控请求数，防整轮超时）
+SUMMARY_TOP_N = 8   # fetch_page 对所有候选抓摘要（2026-08-06 修：2 条限制导致 131 条 P1 素材 124 条空摘要，
+                    # RSSHub 信源大量浪费；8 = max_items 默认值，全部抓）
 
 # RSSHub 本机部署（2026-08-05 用户决策，源码 dev 模式 @ :1201）
 # dev 模式动态加载 lib/routes/ 下的路由——含自定义路由（cnsa/news、esa/newsroom），
@@ -213,42 +214,32 @@ def _fetch_summary(url: str, max_chars: int = 400) -> str:
 
 
 def fetch_fulltext(url: str, max_chars: int = 8000) -> str:
-    """抓取文章页全文（全文优先铁律 2026-08-05）——提取全部正文段落拼接。
+    """抓取文章页全文（Readability 算法，2026-08-06 替换手写正则）。
 
-    与 _fetch_summary 的区别：不只首段，而是所有合格 <p> 段落（同样跳过
-    script/style/nav/footer、图片说明与 stub 填充），空格拼接后按句界截到
-    max_chars（≈1300 词，足够 250-600 词主条/深度规格压缩用）。
+    用 readability-lxml（Mozilla Readability 的 Python 移植，Firefox Reader
+    Mode 同款算法）提取正文——浏览器级多站适配，远超手写 <p> 正则/长字符串拼接。
+    实测：GT 529 词（手写正则仅 85 词）、DefenceTalk 359 词。
 
     调用方：supply 对主条/深度规格（words[0] ≥ 250）的最优候选抓全文——
     agent/rewrite 从全文压缩到 target_words（只压缩不扩写铁律），摘要是全文
     不可得时的兜底。失败/超时返回空串（由 supply 侧兜底摘要，不中断整轮）。
     """
     try:
+        from readability import Document
+    except ImportError:
+        return ""  # readability-lxml 未装（pip install readability-lxml）
+    try:
         html = http_get(url)
     except Exception:
         return ""
-    paras = []
-    for m in re.finditer(r"<p[^>]*>(.*?)</p>", html, flags=re.S):
-        text = strip_tags(m.group(1))
-        if (text and len(text) > 40 and not is_junk_paragraph(text)
-                and re.search(r"[.!?]", text)):
-            paras.append(text)
-    body = " ".join(paras)
-    # 长字符串拼接 fallback（2026-08-06）：GT 等页面正文嵌在 JS 变量/属性字符串里，
-    # <p> 只有导语（85 词），长字符串拼接可得 458 词全文。仅当 <p> 提取不足时触发。
-    if len(body.split()) < 150:
-        longs = re.findall(r'["\']([^"\']{100,})["\']', html)
-        seen, parts = set(), []
-        for s in longs:
-            s = s.strip()
-            if (s not in seen and re.search(r"[.!?]", s)
-                    and not s.startswith(("http", "www.", "//", "data:"))):  # 滤 URL/图片
-                seen.add(s)
-                parts.append(s)
-        joined = " ".join(parts)
-        if len(joined.split()) > len(body.split()):
-            body = joined
-    if not body.strip():
+    try:
+        doc = Document(html)
+        summary_html = doc.summary()
+    except Exception:
+        return ""
+    body = re.sub(r"<[^>]+>", " ", summary_html)
+    body = re.sub(r"\s+", " ", body).strip()
+    if not body:
         return ""
     if len(body) > max_chars:
         body = body[:max_chars]
@@ -289,7 +280,8 @@ def fetch_page(source: dict, max_items: int = 8) -> list[dict]:
                 seen_titles.add(norm_title)
             if len(candidates) >= max_items:
                 break
-    # 去重（同标题/同 URL 各保留首个，终审 I-2），限数量；只对前 SUMMARY_TOP_N 条抓首段摘要
+    # 去重（同标题/同 URL 各保留首个，终审 I-2），限数量；全部抓摘要（2026-08-06 修：
+    # 原 SUMMARY_TOP_N=2 只抓前 2 条，其余空摘要无法成版——RSSHub 信源大量浪费）
     seen_titles, seen_urls, out = set(), set(), []
     for c in candidates:
         norm_title = " ".join(c["title"].lower().split())
@@ -297,8 +289,12 @@ def fetch_page(source: dict, max_items: int = 8) -> list[dict]:
             continue
         seen_titles.add(norm_title)
         seen_urls.add(c["url"])
-        if len(out) < SUMMARY_TOP_N:
-            c["summary"] = _fetch_summary(c["url"])
+        c["summary"] = _fetch_summary(c["url"])  # 全部抓，不设上限
+        # 全部候选抓全文（2026-08-06）：Readability 提取质量高；原"摘要≥100才抓"
+        # 是漏洞——RSSHub 补的摘要都是首段 40-70 词，永远不触发，导致全文 0
+        ft = fetch_fulltext(c["url"])
+        if ft:
+            c["fulltext"] = ft
         out.append(c)
         if len(out) >= max_items:
             break
@@ -333,6 +329,10 @@ def fetch_all(sources: dict, out_dir: Path, max_workers: int = 8) -> dict:
                 n["plate"] = plate
                 n["source"] = src["name"]
                 n["kind"] = src["kind"]
+                # RSSHub 路由常只给标题+链接，摘要为空（2026-08-06 修：ESA/NASA 等全空）
+                # → 主动补抓首段摘要，避免空摘要素材无法成版
+                if not n.get("summary", "").strip():
+                    n["summary"] = _fetch_summary(n["url"])
             return plate, news
         except Exception as e:
             print(f"  ⚠️ {src['name']} 抓取异常: {e}")
