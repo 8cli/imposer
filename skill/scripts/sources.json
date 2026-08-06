@@ -194,8 +194,7 @@
       "name": "DeepSeek",
       "url": "https://www.deepseek.com/en",
       "kind": "china-ai",
-      "mode": "page",
-      "rsshub": "/deepseek/news"
+      "mode": "page"
     },
     {
       "name": "Alibaba",
