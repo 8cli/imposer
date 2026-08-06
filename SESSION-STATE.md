@@ -1,10 +1,10 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 20:50 UTC — 第九轮：博客发布 + 规则上传 8cli/claude
-> 状态：**全链路打通 + 4 版填充全达标 + 页边距符合设计契约 + 博客发布 + 三仓库同步**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 97.8% / P2 97.8% / P3 98.6% / P4 95.9%，上边距 19.9mm / 下 20.6-21.2mm / 左 14.5mm，autofit 收敛 + demand 无需求；linotype 单一仓库 ~/news/latex；博客已发布 clid.net）
-> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 八轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
-> 血泪经验：**55 条**（#1-55 连续，含 #46 调研方法论全局规则 + #47-55 几何修复）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
+> 保存：2026-08-06 23:55 UTC — 第十轮：晚刊出报闭环 + 4 处修复
+> 状态：**全链路打通 + 4 版填充全达标 + 晚刊出报闭环 + 4 处新修复**（imposer 回归 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；晚刊 P1 95% / P2 104% / P3 100% / P4 102%，autofit 收敛 columns=3/10.84pt + demand 无需求 + pdfcheck 5/5；博客已发布 clid.net）
+> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
+> 血泪经验：**59 条**（#1-59 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-59 出报闭环）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 8dca6a9）+ **8cli/linotype**（main @ 34b32c0）
 
 ## 一、项目定位
 
@@ -212,6 +212,27 @@ demand 无需求。回归 linotype 25/25 + imposer 57/57。
 - 修正第 6 条"54 条血泪"→"55 条"
 - 三仓库现状：imposer `5852179` / linotype `4c3e105` / claude `7829d5d` 全部推送
 
+### 08-06 第十轮：晚刊出报闭环 + 4 处修复（用户"形成今日报纸"）
+
+**晚刊完整出报**（全部修复落地后重跑 2026-08-06 报纸）：
+- 抓取 389 条素材（全文覆盖 331/85%）→ 审料门 → 成版 → autofit → 供给闭环 3 轮
+- **最终收敛**：columns=3 / bodyfontsize=10.84pt，fill **P1 95% / P2 104% / P3 100% / P4 102%**，
+  demand 无需求，pdfcheck **5/5**（Overfull 0 / Error 0 / MediaBox 420x297 / 6 字体 / 2 页）
+- 视觉：第 2 页 PASS；第 1 页版底留白 13-21mm（内容天然短，fill 达标，可接受）
+- agent 改写 4 条（AWS ACME 81 词 / AWS 投诉分类 74 词 / AWS HPC 70 词 / NASA TEMPO 70 词），
+  P4 中国科技缺口诚实报告（Xinhua 全 0 词、西方科技补充）
+
+**出报发现 4 处真实 bug（全部修复 + 提交）**：
+
+| # | 症状 | 根因 | 修复 |
+|---|---|---|---|
+| 56 | P2 主条 162/280 词，fill 84.7% | split_paragraphs 按句切段 + max_paras 硬截断——短句体全文（Cloudflare 每句一行）切 20+ 短段只留 12 | 动态目标段长 ceil(词数/max_paras)：词数全保留 + 段数用满（build_plates 8dca6a9） |
+| 57 | P3/P4 3 轮供给 fill 纹丝不动 | 固定 n 简讯槽 + 补稿排最前 → 新补稿挤掉同槽旧简讯（替换空转） | 补稿全保留追加 + 普通简讯补足 n（append-not-replace） |
+| 58 | 补稿后 P2 溢出 5.4% 反逼全局降字号拖垮 P1 | BRIEFS 输出 [:n_briefs] 再截断 + 补稿累积无上限（P2 10 条简讯 782pt） | 统一上限 n_briefs + 2 |
+| 59 | demand/visual 误读溢出数据假 FAIL | autofit 收敛 best_bs==lo 用内存缓存，out.log/out.pdf 停在最后一次实际编译（二分上界试探 10.92pt 溢出 106%） | 收敛统一重编译 lo（build.py 34b32c0）；测试断言对齐 ≤5% 微小截断语义（25/25） |
+
+**实测提升**：P2 84.7% → 94.8% → 收敛 95-104%（autofit 收敛点 66% → 92% 基础 fill）。
+
 ### 08-06 提交（imposer 6fc39d7 → a62e018 + linotype 69cfe27 → b314744）
 imposer 完整链（第八轮后）: 6fc39d7 → 0fb273c → cd0d4c5 → f49940b → 6f2ddaf → 02eb47b →
   88cdf12 → dde4ee9 → 353dca1 → 6f868f3 → 68a8413 → ad2b785 → b73d667 → 22a031e →
@@ -344,8 +365,8 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
   卷: freshrss-data  ← 持久化（--restart unless-stopped）
 
 GitHub：
-  8cli/linotype  @ 4c3e105  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex）
-  8cli/imposer   @ 5852179  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub）
+  8cli/linotype  @ 34b32c0  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex）
+  8cli/imposer   @ 8dca6a9  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub）
   8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
   博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
 ```
