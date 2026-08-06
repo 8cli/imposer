@@ -148,11 +148,17 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 
 ## 信源与归属
 
-**RSSHub（可选增强）**：本机 Docker 持久化实例（`docker run -d --name rsshub --restart
-unless-stopped -p 1200:1200 -v rsshub-data:/app/data diygod/rsshub`）。sources.json 里带
-`"rsshub"` 字段的源（当前 OpenAI/Anthropic）采集时优先走 RSSHub 路由（社区维护的精确
-解析），返回空自动回退原主页直抓。RSSHub 是稳定性补强不是单点——直抓成功率 95% 的
-体系不因它失效而停摆。
+**RSSHub（源码 dev 模式，2026-08-05 用户决策）**：本机 `~/news/rsshub-dev/start.sh`
+持久化运行（端口 1201，crontab @reboot 开机自启）。源码 `~/news/rsshub-src` 以
+**dev 模式**（NODE_ENV=dev）运行——**动态加载 `lib/routes/` 下的路由，加路由文件即
+生效（tsx watch 自动重启），无需重建镜像**。内置路由（OpenAI/Anthropic 等）+ **自定义
+路由**（`cnsa/news`、`esa/newsroom`，imposer 自写）都在 1201 一个实例上。
+
+- **加自定义路由**：写 `~/news/rsshub-src/lib/routes/<name>/<route>.ts` + `namespace.ts`
+  （参照 cnsa/esa 现有写法）→ tsx watch 自动重载 → 无需重启
+- **接入 imposer**：sources.json 加 `"rsshub": "/<name>/<route>"` 字段，采集优先走路由，
+  返回空自动回退原主页直抓（补强不是单点）
+- **已接入**：CNSA（P3 中国航天官方）、ESA（P3 欧洲航天）、OpenAI/Anthropic（P2）
 
 - 信源清单：`scripts/sources.json`（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 中国科技，全面亲中）
 - 归属铁律：`By {记者} · {站点}`；无记者 `By {站点} News Desk`；简讯末尾标站点；付费墙退 RSS 摘要标注 `[付费墙]`

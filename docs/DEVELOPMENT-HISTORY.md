@@ -189,3 +189,24 @@ User asked whether direct scraping is the problem and whether a self-hosted RSSH
 | Conclusion | RSSHub is an incremental stabilizer, not a rescue for anti-bot sources. It cannot fix what the origin sites refuse to serve |
 
 Wired the useful part: sources.json now carries `"rsshub"` route paths (OpenAI `/openai/news`, Anthropic `/anthropic/news`); `fetch_sources.py` prefers the RSSHub route (community-maintained precise parsing) and **falls back to direct page-scraping when it returns empty** — a preference, not a single point of failure. +2 tests (route priority, empty-fallback). 52 → 54, all green.
+
+## Phase 9 — Custom routes via source-tree dev mode (2026-08-06 early)
+
+User pushed back: *"没有的路由你可以自己补充进去所需路由，不要只用已有路由！"* and *"直接用docker镜像，通过接口添加自定义路由就可以，你在做什么？你不调研rsshub docker用法？"* — both correct. Systematic investigation of the RSSHub source tree (`rsshub-src`, 49M) revealed **three** route mechanisms, only one of which (prod build) the official Docker image exposes:
+
+| Mechanism | How | Source evidence |
+|---|---|---|
+| ① routes-dir dynamic load (**dev mode**) | drop route files in `lib/routes/`, **tsx watch auto-reloads — no rebuild** | `registry-dev.ts` runtime `fs.readdirSync(routesDirectory)`; `registry.ts:59` dev branch |
+| ② `registerRoute` API (**npm package**) | `init()` + `registerRoute(namespace, route)` — programmatic, runtime | `lib/pkg.ts:40`, official test `pkg.test.ts:89` |
+| ③ build-time scan (**prod / Docker image**) | `lib/routes/` compiled into dist by `build-routes.ts` | `build-routes.ts`; Dockerfile `rm -rf /app/lib` |
+
+The official Docker image ships **only ③** (`dist/`, `lib/` deleted, `index.mjs` exports just `default`); `registerRoute` lives in the **npm package** (`package.json` `exports["."]` → `dist-lib/pkg.mjs`, entry `./lib/pkg.ts`).
+
+**Decision (user "按A落地验证"): source-tree dev mode.** `pnpm install` (830M dev deps) + `PORT=1201 pnpm dev` — NODE_ENV=dev dynamically loads routes. Wrote **2 custom routes**:
+
+- `/cnsa/news` — CNSA English news list (`li.ej_cont_li > a`, filter `/content.html`) — **the P3 China-space gap, filled**
+- `/esa/newsroom` — ESA press releases (`div.grid-item.press-release`, `data-date` → pubDate)
+
+E2E verified on the live dev instance: CNSA 8 items, ESA 5 items with dates, OpenAI/Anthropic 8 items each still served. Found and fixed a real bug: CNSA links lost `/english/` prefix (relative `../../` resolved against `/english/` instead of the list page) — `new URL(href, listUrl)` fixes it.
+
+Persistence: `~/news/rsshub-dev/start.sh` (idempotent, healthcheck) + crontab `@reboot`. Docker container (1200, built-in routes only) retired in favour of the single dev instance (1201, all routes). sources.json `rsshub` fields for CNSA/ESA; `RSSHUB_BASE` → 1201. 54/54 green.

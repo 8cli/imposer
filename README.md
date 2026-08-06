@@ -156,7 +156,9 @@ Special characters are escaped by Linotype's `build.py` (Imposer writes raw text
 | P2 AI & Tech | Moonshot, Z.ai, DeepSeek, Alibaba | Google, OpenAI†, Anthropic†, NVIDIA, xAI, Cloudflare, MS, GitHub, Amazon, Yahoo/AOL, MIT/Ars |
 
 † fetched via local RSSHub route (`/openai/news`, `/anthropic/news`).
-| P3 Space | CNSA, Xinhua Space | NASA, ESA, JAXA, ISRO, SpaceX, Rocket Lab, SpaceNews, Space.com, NASA Spaceflight, Universe Today |
+| P3 Space | CNSA†, Xinhua Space | NASA, ESA†, JAXA, ISRO, SpaceX, Rocket Lab, SpaceNews, Space.com, NASA Spaceflight, Universe Today |
+
+† custom RSSHub route (`/cnsa/news`, `/esa/newsroom`) — China's space agency English news, previously the plate's biggest gap.
 | P4 Tech (China + int'l) | China Daily, Global Times, Xinhua | SCMP, ITER, Phys.org, TechXplore, Nature, IEEE Spectrum, New Scientist |
 
 All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/remove sources.
@@ -175,7 +177,7 @@ All URLs verified reachable (2026-08-05). Edit `scripts/sources.json` to add/rem
 ## Requirements
 
 - **Linotype** (`~/news/latex` or the [linotype repo](https://github.com/8cli/linotype)) — the typesetting engine, with `--demand` support (build.py ≥ 2026-08-05)
-- **RSSHub** (optional, recommended) — local Docker instance for sources that carry an `rsshub` route (currently OpenAI, Anthropic): `docker run -d --name rsshub --restart unless-stopped -p 1200:1200 -v rsshub-data:/app/data diygod/rsshub`. When a source has an `rsshub` field, collection prefers the RSSHub route (community-maintained precise parsing) and falls back to direct page-scraping if it returns empty.
+- **RSSHub** (recommended) — local source-tree instance in **dev mode** (`~/news/rsshub-dev/start.sh`, port 1201, crontab `@reboot` autostart). Dev mode **dynamically loads routes from `lib/routes/`** — add a route file and it takes effect immediately (tsx watch auto-reload), no image rebuild. Serves both built-in routes (OpenAI, Anthropic) and **custom routes written for imposer** (`/cnsa/news`, `/esa/newsroom`). When a source has an `rsshub` field, collection prefers the RSSHub route and falls back to direct page-scraping if it returns empty.
 - **Python 3.10+** (stdlib for collection/composition)
 - **An agent** (normal case) to execute the rewrite per SKILL.md rules; or, for headless cron automation, the optional `rewrite.py` fallback needs `anthropic` + `ANTHROPIC_API_KEY` (falls back to Claude CLI)
 - **xelatex** (TeX Live) — via Linotype

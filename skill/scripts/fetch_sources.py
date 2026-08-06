@@ -19,10 +19,12 @@ UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chr
 TIMEOUT = 8
 SUMMARY_TOP_N = 2   # fetch_page 只对前 N 条候选抓首段摘要（控请求数，防整轮超时）
 
-# RSSHub 本机持久化部署（2026-08-05 用户决策，docker: diygod/rsshub @ :1200）
-# 有 "rsshub" 字段的 page 源优先走 RSSHub 路由（社区维护的精确解析），
+# RSSHub 本机部署（2026-08-05 用户决策，源码 dev 模式 @ :1201）
+# dev 模式动态加载 lib/routes/ 下的路由——含自定义路由（cnsa/news、esa/newsroom），
+# 加路由文件即生效（tsx watch 自动重启），无需重建镜像。容器版（1200，仅内置路由）已退役。
+# 有 "rsshub" 字段的 page 源优先走 RSSHub 路由（社区维护 + 自定义的精确解析），
 # 失败/为空自动回退原主页直抓——RSSHub 是稳定性补强，不是替换。
-RSSHUB_BASE = "http://localhost:1200"
+RSSHUB_BASE = "http://localhost:1201"
 
 # ---- 审料门前置过滤（终审 I-5）：URL 合法性 + 明显非文章链接 ----
 # 路径标记：命中即视为导航/列表/多媒体页而非文章页

@@ -161,7 +161,9 @@ BRIEFS:
 | P2 AI 科技 | 月之暗面、智谱、深度求索、阿里 | 谷歌、OpenAI†、Anthropic†、英伟达、xAI、Cloudflare、微软、GitHub、亚马逊、雅虎/AOL、MIT/Ars |
 
 † 经本机 RSSHub 路由抓取（`/openai/news`、`/anthropic/news`）。
-| P3 太空 | 中国国家航天局、新华社航天 | NASA、ESA、JAXA、ISRO、SpaceX、火箭实验室、SpaceNews、Space.com、NASA Spaceflight、今日宇宙 |
+| P3 太空 | 中国国家航天局†、新华社航天 | NASA、ESA†、JAXA、ISRO、SpaceX、火箭实验室、SpaceNews、Space.com、NASA Spaceflight、今日宇宙 |
+
+† 自定义 RSSHub 路由（`/cnsa/news`、`/esa/newsroom`）——中国航天局英文新闻，补齐了 P3 最大的缺源。
 | P4 科技（中国 + 国际） | 中国日报、环球时报、新华社 | 南华早报、ITER、Phys.org、TechXplore、Nature、IEEE Spectrum、新科学家 |
 
 全部 URL 已验证可达（2026-08-05）。增删信源改 `scripts/sources.json`。
@@ -180,7 +182,7 @@ BRIEFS:
 ## 依赖
 
 - **Linotype**（`~/news/latex` 或 [linotype 仓库](https://github.com/8cli/linotype)）——排版引擎，需支持 `--demand`（build.py ≥ 2026-08-05）
-- **RSSHub**（可选，推荐）——本机 Docker 实例，服务带 `rsshub` 字段的信源（当前 OpenAI、Anthropic）：`docker run -d --name rsshub --restart unless-stopped -p 1200:1200 -v rsshub-data:/app/data diygod/rsshub`。采集时优先走 RSSHub 路由（社区维护的精确解析），返回空自动回退原主页直抓
+- **RSSHub**（推荐）——本机源码 dev 模式实例（`~/news/rsshub-dev/start.sh`，端口 1201，crontab `@reboot` 开机自启）。**dev 模式动态加载 `lib/routes/` 下的路由——加路由文件即生效（tsx watch 自动重启），无需重建镜像**。同时服务内置路由（OpenAI、Anthropic）与 **imposer 自定义路由**（`/cnsa/news`、`/esa/newsroom`）。带 `rsshub` 字段的信源优先走路由，返回空自动回退原主页直抓
 - **Python 3.10+**（采集/成版仅标准库）
 - **agent**（常规场景）按 SKILL.md 规则执行改写；headless cron 自动化则用可选兜底 `rewrite.py`（需 `anthropic` + `ANTHROPIC_API_KEY`，可降级 Claude CLI）
 - **xelatex**（TeX Live）——经 Linotype
