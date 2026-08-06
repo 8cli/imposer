@@ -18,8 +18,10 @@ imposer 是 linotype 的**拼版工**：组织 4 版素材 → 调用 linotype �
 ```bash
 # 1. 建当日工作区
 DAILY=~/news/daily/$(date +%F); mkdir -p $DAILY/sources $DAILY/plates
-# 2. 抓取信源（4 版并行）
-python3 ~/.claude/skills/imposer/scripts/fetch_sources.py \
+# 2. 抓取信源（2026-08-06 经济架构主路径: 查 FreshRSS 库而非实时抓取）
+#    默认 fetch_freshrss.py（直查 SQLite 全文）；直抓源（13 个 SPA/反爬）
+#    需 fetch_sources.py 补抓时再跑
+python3 ~/.claude/skills/imposer/scripts/fetch_freshrss.py \
   ~/.claude/skills/imposer/scripts/sources.json $DAILY > $DAILY/fetch.log
 # 3. 组织成版（需人工审查素材后执行——见"审料门"）
 python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY

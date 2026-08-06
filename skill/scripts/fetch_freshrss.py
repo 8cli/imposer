@@ -140,8 +140,30 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
             results.setdefault(plate, []).append(entry)
 
     conn.close()
-    # 按 sources.json 的版块顺序返回
-    return {p: results.get(p, []) for p in sources}
+    ordered = {p: results.get(p, []) for p in sources}
+
+    # 写信源归档（血泪 #33）: SKILL.md 审料门要求成版前人工复核
+    # sources/pN.md——fetch_freshrss 此前不写该目录 → 审料门失去输入
+    # （人审环节静默消失）。与 fetch_sources 同格式。
+    sources_dir = out_dir / "sources"
+    sources_dir.mkdir(parents=True, exist_ok=True)
+    for plate, plate_news in ordered.items():
+        with open(sources_dir / f"{plate.lower()}.md", "w", encoding="utf-8") as f:
+            f.write(f"# {plate} 信源归档\n\n")
+            for n in plate_news:
+                byline = (f"By {n['author']} · {n['source']}"
+                          if n["author"] else f"By {n['source']} News Desk")
+                f.write(f"## {n['title']}\n\n")
+                f.write(f"- 站点: {n['source']}\n- 记者: {byline}\n- URL: {n['url']}\n")
+                if n["date"]:
+                    f.write(f"- 时间: {n['date']}\n")
+                if n.get("fulltext"):
+                    f.write(f"- 全文: {len(n['fulltext'].split())} 词\n")
+                if n["summary"]:
+                    f.write(f"- 摘要: {n['summary'][:150]}\n")
+                f.write("\n")
+
+    return ordered
 
 
 def _kind_for_feed(feed_name: str) -> str:
