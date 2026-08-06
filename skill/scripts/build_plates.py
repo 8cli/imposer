@@ -252,6 +252,20 @@ def pick_main_stories(news: list[dict], n: int = 2, plate: int = 1) -> list[dict
         KIND_RANK.get(x["kind"], 9)))  # 同分决胜：亲中仍占优，但不再独占主条
     big = [x for x in ordered if len(x["summary"].split()) >= MIN_MAIN_WORDS]
     if len(big) >= n:
+        # 2026-08-06: P1 main-aside 侧栏容量大 → 保持两长主条（侧栏填满）；
+        # P2-P4 等宽 3 栏 → 主条1 长（≥250 词深稿）+ STORY-B 中等（150-250 词）——
+        # 两个 300+ 词主条在 3 栏超容量（P2 实测 907pt > 742pt 溢出 122%）。
+        if plate == 1:
+            return big[:n]
+        if n == 2:  # 实际成版 n=2：主条1 长 + STORY-B 短副条
+            main1 = big[0]
+            # STORY-B 选短稿（60-120 词，副条）——3 栏布局两个长主条必超容量
+            # （P2 实测 334+297 词 → 907pt > 742pt 溢出 107%）。
+            # P3/P4 短副条（78/75 词）不溢出——短副条是 3 栏布局的正确形态。
+            # 注意: 从全 ordered 池选（短稿不在 big 里，big 只含 ≥100 词）
+            short = [x for x in ordered if 60 <= len(x["summary"].split()) <= 120]
+            if short:
+                return [main1, short[0]]
         return big[:n]
     return ordered[:n]  # 素材用尽：无 ≥100 词素材（宁缺毋滥边界）
 
@@ -344,17 +358,22 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
         out.append("COLUMNS: 3")
     out.append("KICKER: " + PLATE_KICKERS.get(idx, "CHINA TECH"))
     out.append("HEADLINE: " + main[0]["title"])
-    out.append("DECK: " + main[0].get("summary", "")[:200])
+    out.append("DECK: " + main[0].get("summary", "")[:250])
     out.append("BYLINE: " + byline_of(main[0]))
     out.append("BODY:")
-    for para in split_paragraphs(main[0].get("summary", "")):
+    # 主条正文完整使用（max_paras=14）——2026-08-06 修：原 max_paras=4 截断
+    # 压缩后的主条（250-400词）只取前 4 段（~108词），主栏 2 栏撑不满 →
+    # P1 main-aside 左下角大块留白（视觉实证 61% 高度即空）。
+    # 后改 8 段仍截（319词 14 句 → 182词）——主条必须完整，14 段覆盖
+    # demand 主条上限（400 词 ~16 句）。
+    for para in split_paragraphs(main[0].get("summary", ""), max_paras=14):
         out.append(para)
     out.append("")
     # 副主条: STORY-B（build.py 解析后 P1 进侧栏 aside，P2-P4 渲染为 subheadline+正文）
     # 注意: STORY-B 后直接跟正文段，不能再写 "BODY:"（会把段落路由回主 body）
     if len(main) > 1:
         out.append("STORY-B: " + main[1]["title"])
-        for para in split_paragraphs(main[1].get("summary", "")):
+        for para in split_paragraphs(main[1].get("summary", ""), max_paras=14):
             out.append(para)
         out.append("")
     if briefs:
@@ -375,8 +394,8 @@ def write_plates(results: dict, out_dir: Path) -> None:
     plates_dir.mkdir(parents=True, exist_ok=True)
     plate_names = {"P1": 1, "P2": 2, "P3": 3, "P4": 4}
     # 简讯数按版（2026-08-06）：P1/P4 内容充足（3 条即可，6 条会溢出），
-    # P2/P3 主条素材池不足、需更多简讯补填充（6 条）
-    briefs_per_plate = {1: 3, 2: 6, 3: 6, 4: 3}
+    # P2/P3 主条素材池不足、需更多简讯补填充（4 条——6 条在主条完整后溢出 137%）
+    briefs_per_plate = {1: 3, 2: 3, 3: 3, 4: 3}
     seen = set()  # 四版池级已用 URL（终审 I-2 跨版去重）
     for plate, news in results.items():
         idx = plate_names.get(plate)
