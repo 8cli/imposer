@@ -1,7 +1,7 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 12:40 UTC — 第六轮：全面审计 + multicol 整盒丢失修复（P3 双版正文静默消失根因）
-> 状态：**全链路打通 + 4 版填充全达标（真渲染）**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 98.5% / P2 99.1% / P3 101.9% / P4 95.6%，autofit 真收敛 + 视觉 PASS；linotype 单一仓库 ~/news/latex）
+> 保存：2026-08-06 14:25 UTC — 第七轮：审计发现全修复（~20 项）+ main-aside 栏平衡接受
+> 状态：**全链路打通 + 4 版填充全达标**（imposer 57/57 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；实报 P1 97.4% / P2 98.2% / P3 95.2% / P4 96.3%，autofit 收敛 + demand 无需求；linotype 单一仓库 ~/news/latex）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 四轮）
 > 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ dde4ee9）+ **8cli/linotype**（main @ ca16c17）
 
@@ -266,6 +266,24 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 25. **inbrief 是通栏设计（3×0.319\contentW 并排），进 multicol 栏内必溢出 348pt**——\linewidth 自适应：栏内单列堆叠（同 \asidebriefs），通栏保留 3 栏并排。血泪：全版宽宏不能直接搬进栏内
 26. **vsplit 对 multicol 整盒是全切——内容超高时整盒被丢，fill 虚高假达标**。根因链：① @colht 动态计算用 \ht\platebox（vbox 构造中=0）→ multicol 满版 → 版头+multicol 超 contentH → vsplit 触发；② vsplit 切不动 multicol 整盒 → 整盒丢弃 → 版面只剩版头（P3 双版实测 53.7mm，fill 报 100%）；③ \begin/\end 的 \begingroup/\endgroup 回滚 \setbox 和 \newif 赋值（需 \global）。修复：\plateheader 收集版头（\global\setbox + \unvcopy），storycolumns @colht = contentH − 版头 − 4pt，vsplit 跳过含 multicol 的版（\global flag）——超高自然溢出 + Overfull 报告（truncated >5% 驱动 autofit 缩字号）
 27. **Kpathsea 优先加载 tex 文件目录的 cls**——产物目录残留旧版 linotype.cls 会静默覆盖引擎目录新版（实测 plateheader undefined，编译用了 daily 目录旧 cls）。compile_tex 设 `TEXINPUTS=引擎目录:` 锁定
+28. **mainaside 宽度公式**——mainW = 2c/3 − g/3、asideW = c/3 − 2g/3（原 +g 每版水平溢出 10.6pt、两栏不对称）
+29. **fetch_freshrss max_items 截断 no-op**——continue 只跳内层循环，每版拉全库 477 条；改按 feed 配额（每源最新 8 条），低量智库源不被高量源挤掉
+30. **配置源 vs 已订阅 feed 无对照**——/xinhuaenglish/news 未订阅致 P1/P3/P4 三源全空零告警；加启动校验逐源告警
+31. **Al Jazeera rsshub 指向阿拉伯语站**——英文源形同虚设 + 30 条阿拉伯语占位污染 P1 候选；删 rsshub 回退英文 RSS
+32. **fetch_sources title 不 unescape**——RSSHub 双编码 &amp;amp; 直出到版面；对称修复
+33. **fetch_freshrss 不写信源归档**——审料门（人工复核 sources/pN.md）失去输入；补写同格式归档
+34. **\end{plate} 后缺 %**——换行被 TeX 读为空格，两版间 2.51pt 空格胶水 → 每张双版页 1.67pt Overfull
+35. **tex_escape 不转义反斜杠**——正文含 \ 编译失败；占位符方案（\x00 → \textbackslash{}）避免二次转义
+36. **expandedtitle 固定字号**——26pt 不随 bodyfontsize 缩放，比例 3.06×→2.36× 失调；改 \linotype@bs*274/100
+37. **typeout 双单位 ptpt**——\the\dimexpr 已含 pt 再拼 pt；三处修复
+38. **_kind_for_feed 硬编码路径**——用自定义 sources 跑 kind 全回退 tech-media；改用传入 sources
+39. **DeepSeek rsshub 是中文 API 文档**——changelog 当新闻进 P2；删 rsshub 回退官网直抓
+40. **fetch_fulltext 无 unescape**——与 fetch_freshrss 不对称（&nbsp;→\xa0 残留）；对称修复
+41. **write_demand 按 truncated>5% 判定**——原 re.search("Overfull") 误杀微超版的需求单（P2 76.9% 补稿被吞）
+42. **P1 题材负向词为空**——长度优先把 Brookings 医保论文推上主条；加 medicare/hospital 等降权
+43. **main-aside 版头预算 60pt 假设错误**——实际版头 275pt（DECK 250 字符 90pt）；DECK 截 120 字符版头降 213pt，main 栏空间释放
+44. **mainstory colH 反复调试教训**——vsplit 截断 vs vtop 自然高的栏平衡反复横跳；main 栏短于 aside 是版面平衡特性（fill 达标），接受列尾空隙，不强制等高
+45. **P2 等宽栏简讯数决定填充**——4/5 条 93.8%、6 条 98.2%；简讯数按版实测微调
 
 ## 六、目录状态
 
