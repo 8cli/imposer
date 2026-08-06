@@ -335,6 +335,10 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 53. **demand.json 残留清空**——write_demand 无需求返回 None 不覆盖 → 旧补稿单残留（实测 P2 实际 98.2% 但旧文件报 93.8%），闭环步骤 7 白跑一轮；无需求时删除旧文件
 54. **\topskip(11pt) 侵蚀页边距**——plate 是页面第一个盒子（minipage[t] 首元素 0 高规则），页面级 \topskip 胶 = 11pt 插在纸顶 → 每条版整体下移 3.9mm（顶 23.8 vs 设计 20、底 12.2 vs 16，底边小于左右违反报纸惯例）。\setlength{\topskip}{0pt} 实测顶边恢复 20.09mm
 55. **aside column 截断接入 autofit**——P1 侧栏 792.4pt vsplit 截到 732.6pt（丢 49.8pt ≈ 21mm），截断后 plate content < contentH → 不触发 Overfull plate → fill 97.4% 假达标（内容静默丢失）。补解析 (main|aside) column 截断 >5% 即 overfull + P1 简讯 3→2 消除根源
+56. **split_paragraphs 按句切段 + max_paras 硬截断丢主条词数**——"每句一行"的短句体全文（Cloudflare 等科技博客）把 280 词切成 20+ 短段，max_paras=12 截断后只剩 162/280 词（P2 fill 84.7% 虚低）。修复：动态目标段长 = ceil(词数/max_paras)——词数全保留 + 段数用满；散文体（句长 ≥ 目标）每句一段等价原逻辑
+57. **固定简讯槽 + 补稿排最前 = 替换空转**——pick_briefs 选满固定 n 后新补稿挤掉同槽旧简讯，若新旧长度相近 fill 恒定不涨（P3/P4 3 轮供给 fill 纹丝不动）。修复：补稿（tier ≤1）全保留追加 + 普通简讯补足 n（append-not-replace 语义）
+58. **补稿累积无上限过冲**——BRIEFS 输出 [:n_briefs] 再截断丢补稿（第 2 截断点）+ 补稿无限累积（P2 10 条简讯 → 782pt > 742pt 溢出 5.4%），反逼 autofit 全局降字号拖垮 P1（95.4%→89%）。统一为上限 n_briefs + 2
+59. **autofit 收敛不重编译最终配置 = 产物与判定脱节**——二分搜索 best_bs == lo 时用内存缓存 fills 判定收敛，out.log/out.pdf 停在最后一次实际编译（二分上界试探，可能溢出）——实测迭代 5 达标 10.84pt 但 out.log 是迭代 6 的 10.92pt 溢出 106%，demand/visual 误读溢出数据假 FAIL。修复：收敛确认统一重编译 lo（最终配置），产物与收敛点一致；测试断言对齐 ≤5% 微小截断语义（vsplit 兜底是设计内行为）
 
 ## 六、目录状态
 
@@ -365,8 +369,8 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
   卷: freshrss-data  ← 持久化（--restart unless-stopped）
 
 GitHub：
-  8cli/linotype  @ 34b32c0  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex）
-  8cli/imposer   @ 8dca6a9  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub）
+  8cli/linotype  @ 34b32c0  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；build.py 收敛重编译修复）
+  8cli/imposer   @ 55f1802  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十轮状态含血泪 #56-59）
   8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
   博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
 ```
