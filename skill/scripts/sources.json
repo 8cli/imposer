@@ -231,6 +231,34 @@
       "kind": "tech-media",
       "mode": "rss",
       "rsshub": "/arstechnica/news"
+    },
+    {
+      "name": "Meta AI",
+      "url": "https://ai.meta.com/blog/",
+      "kind": "company",
+      "mode": "page",
+      "rsshub": "/meta/ai/blog"
+    },
+    {
+      "name": "DeepMind",
+      "url": "https://deepmind.google/blog/",
+      "kind": "company",
+      "mode": "page",
+      "rsshub": "/deepmind/blog"
+    },
+    {
+      "name": "Google Research",
+      "url": "https://research.google/blog/",
+      "kind": "company",
+      "mode": "page",
+      "rsshub": "/google/research"
+    },
+    {
+      "name": "Amazon AWS (EN)",
+      "url": "https://aws.amazon.com/blogs/",
+      "kind": "company",
+      "mode": "page",
+      "rsshub": "/amazon/awsblogs/en_US"
     }
   ],
   "P3": [
