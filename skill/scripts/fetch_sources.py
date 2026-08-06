@@ -304,11 +304,11 @@ def fetch_all(sources: dict, out_dir: Path, max_workers: int = 8) -> dict:
     def run(plate: str, src: dict) -> tuple:
         try:
             if src.get("rsshub"):
-                # RSSHub 路由优先；空/失败回退原主页直抓（RSSHub 是补强不是单点）
+                # RSSHub 路由优先（社区现成 + 自定义）；空/失败回退原源（RSS 源回原 RSS，page 源回原主页）
                 news = fetch_rss({**src, "url": RSSHUB_BASE + src["rsshub"], "mode": "rss"})
                 if not news:
-                    print(f"  ⚠️ {src['name']} RSSHub 空 → 回退主页直抓")
-                    news = fetch_page(src)
+                    print(f"  ⚠️ {src['name']} RSSHub 空 → 回退原源")
+                    news = fetch_rss(src) if src["mode"] == "rss" else fetch_page(src)
             else:
                 news = fetch_rss(src) if src["mode"] == "rss" else fetch_page(src)
             for n in news:
