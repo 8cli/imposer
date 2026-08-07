@@ -377,6 +377,11 @@ def fmt_date(news: dict) -> str:
         dt = _url_date(news)
     if dt is None:
         return ""
+    return _fmt_pub(dt)
+
+
+def _fmt_pub(dt: datetime) -> str:
+    """datetime → 'Aug 6, 2026'（与 fmt_date 同一格式，供出版日期复用）。"""
     return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
 
 
@@ -460,7 +465,8 @@ def split_paragraphs(text: str, max_paras: int = 4) -> list[str]:
     return paras[:max_paras]
 
 
-def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int = 6) -> str:
+def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int = 6,
+                pub_date: str = "") -> str:
     """一个版 → plates/pN.md 文本（linotype 字段格式）。
 
     主条若无带摘要素材则返回 ""（宁缺勿滥，跳过该版并告警）。
@@ -484,6 +490,10 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
         used_urls.extend(x["url"] for x in main)
         used_urls.extend(b["url"] for b in briefs)
     # 版头: P1 用 main-aside（主条 2 栏 + 侧栏），其余等宽多栏
+    # 出版日期（2026-08-07 用户要求）: 只在第一版页顶输出 DATE 字段 →
+    # linotype \dateline 日期线（期次识别）。
+    if idx == 1 and pub_date:
+        out.append("DATE: " + pub_date)
     if idx == 1:
         out.append("LAYOUT: main-aside")
     else:
@@ -611,12 +621,15 @@ def _is_junk(item: dict) -> bool:
     return bool(_JUNK_RE.search(text))
 
 
-def write_plates(results: dict, out_dir: Path) -> None:
+def write_plates(results: dict, out_dir: Path, pub_date: str = "") -> None:
     """写 <out_dir>/plates/p1.md ... p4.md（linotype build.py 消费 plates/ 目录）。
 
     跨版去重（终审 I-2）：四版共享一个已用 URL 集合 seen——同一 URL 的素材
     只在首个版使用，后续版跳过（换素材/跳过）。根因是 P3/P4 共用 China Daily
     综合 RSS、P1/P4 共用 GT/Xinhua：池级去重直接从源头消除跨版重复。
+
+    pub_date（2026-08-07 用户要求）：第一版页顶出版日期 'Aug 6, 2026'。
+    缺省 = 本地今天（与 DAILY 目录 $(date +%F) 一致）；重建旧刊传 --date。
     """
     plates_dir = out_dir / "plates"
     plates_dir.mkdir(parents=True, exist_ok=True)
@@ -632,6 +645,8 @@ def write_plates(results: dict, out_dir: Path) -> None:
     # P4 104.5% 超量（4→3 防全局压字号拖累 P2/P3——P4 超 33.7pt 微超
     # 会触发 autofit 溢出迭代压字号，P2/P3 掉到 92%）
     briefs_per_plate = {1: 4, 2: 6, 3: 5, 4: 3}
+    if not pub_date:
+        pub_date = _fmt_pub(datetime.now().astimezone())  # 本地日期（与 daily 目录一致）
     # P1（2026-08-07）：简讯 2 → 4——拆 2 条主栏底部（MAINBRIEFS）+ 2 条侧栏。
     #   主栏底部空 37-41mm（主条 340 词自然高/2 = 481pt < colH 上限 598pt，
     #   简讯进侧栏填不满主栏），主栏底补白是报纸标准做法。
@@ -659,7 +674,7 @@ def write_plates(results: dict, out_dir: Path) -> None:
             print(f"  ⚠️ {plate}: 垃圾剔除后无剩余素材，跳过")
             continue
         used_urls = []
-        text = write_plate({"news": pool}, idx, used_urls, briefs_per_plate.get(idx, 6))
+        text = write_plate({"news": pool}, idx, used_urls, briefs_per_plate.get(idx, 6), pub_date)
         if not text:
             continue  # write_plate 已告警（无带摘要主条）
         seen.update(used_urls)
@@ -671,6 +686,8 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("fetch_results")   # fetch_sources.py 的 fetch_results.json（或 supply 补充后的合并 JSON）
     ap.add_argument("out_dir")
+    ap.add_argument("--date", default="", metavar="'Aug 6, 2026'",
+                    help="出版日期（第一版页顶日期线）；缺省 = 本地今天，重建旧刊时显式传")
     args = ap.parse_args()
     results = json.load(open(args.fetch_results))
-    write_plates(results, Path(args.out_dir))
+    write_plates(results, Path(args.out_dir), args.date)

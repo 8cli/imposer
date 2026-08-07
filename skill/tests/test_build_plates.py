@@ -73,6 +73,28 @@ def test_write_plates_outputs_files():
         check("Main China Story" in content, f"主条标题缺失: {content[:200]!r}")
 
 
+def test_pub_date_only_on_p1():
+    """出版日期（2026-08-07 用户要求）: --date 只在第一版输出 DATE 字段，
+    其余版无；缺省 = 本地今天（英文格式 'Aug 6, 2026'）。"""
+    from datetime import datetime
+    news2 = [{**x, "url": x["url"] + "2"} for x in NEWS]  # 跨版去重需不同 URL
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td)
+        bp.write_plates({"P1": NEWS, "P2": news2}, out, pub_date="Aug 6, 2026")
+        p1 = (out / "plates" / "p1.md").read_text(encoding="utf-8")
+        p2 = (out / "plates" / "p2.md").read_text(encoding="utf-8")
+        check("DATE: Aug 6, 2026" in p1, f"P1 应含 DATE 字段: {p1[:80]!r}")
+        check("DATE:" not in p2, "P2 不应含 DATE 字段")
+    # 缺省日期 = 本地今天
+    with tempfile.TemporaryDirectory() as td:
+        out = Path(td)
+        bp.write_plates({"P1": NEWS}, out)
+        content = (out / "plates" / "p1.md").read_text(encoding="utf-8")
+        today = datetime.now().astimezone()
+        expect = f"DATE: {today.strftime('%b')} {today.day}, {today.year}"
+        check(expect in content, f"缺省出版日期应为今天: 期望 {expect!r}，实际 {content[:80]!r}")
+
+
 def test_pick_main_stories_skips_empty_summary():
     """page 源空摘要素材不入选主条（宁缺勿滥）。"""
     news = [
