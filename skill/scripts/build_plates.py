@@ -360,11 +360,35 @@ def tex_escape(s: str) -> str:
     return re.sub(r"[\\{}&%$#_~^]", lambda m: _TEX_ESCAPES[m.group()], s)
 
 
+def clean_author(author: str) -> str:
+    """RSS 作者清洗（2026-08-07 用户要求：署名带记者名）：`;` 是多作者分隔符
+    ——';Matt Silverlock' → 'Matt Silverlock'；';A; B; and C' → 'A, B, and C'。
+    去空段、去前后空白、压缩多余空格。"""
+    parts = [re.sub(r"\s+", " ", p.strip()) for p in author.split(";") if p.strip()]
+    return ", ".join(parts)
+
+
+def fmt_date(news: dict) -> str:
+    """素材日期 → 'Aug 6, 2026'（英文报纸格式）。date 字段缺失/解析失败时
+    回退 URL 路径日期；仍不可得 → ''（省略日期，不伪造）。"""
+    item_date = news.get("date")
+    dt = _parse_date(item_date) if item_date else None
+    if dt is None:
+        dt = _url_date(news)
+    if dt is None:
+        return ""
+    return f"{dt.strftime('%b')} {dt.day}, {dt.year}"
+
+
 def byline_of(news: dict) -> str:
-    """归属铁律：有记者 `By {记者} · {站点}`，无记者 `By {站点} News Desk`。"""
-    if news.get("author"):
-        return f"By {news['author']} · {news['source']}"
-    return f"By {news['source']} News Desk"
+    """归属铁律（2026-08-07 用户要求补日期）：`By {记者} · {站点} · {日期}`；
+    无记者 `By {站点} News Desk · {日期}`；日期不可得则省略（不伪造）。
+    多作者 `;` 分隔清洗为 ', ' 连接（RSS author 字段的 ';A; B' 形态）。"""
+    author = clean_author(news.get("author", ""))
+    site = news.get("source", "")
+    base = f"By {author} · {site}" if author else f"By {site} News Desk"
+    date = fmt_date(news)
+    return f"{base} · {date}" if date else base
 
 
 def _clean_headline(title: str, max_chars: int = 60) -> str:
@@ -496,6 +520,9 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
     # P2-P4 副条按 fulltext 60-120 词选定，正文即全文长度）
     if len(main) > 1:
         out.append("STORY-B: " + _clean_headline(main[1]["title"]))
+        # 2026-08-07 用户要求：副条也带日期/站点/记者署名（BYLINE-B 由
+        # linotype build.py 解析 → \asidestory 3 参 / \storybyline）
+        out.append("BYLINE-B: " + byline_of(main[1]))
         story_b = main[1].get("fulltext") or main[1].get("summary", "")
         story_b_cap = 200 if idx == 1 else 120
         if len(story_b.split()) > story_b_cap:
@@ -515,7 +542,21 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
         # 补稿累积无上限会过冲（P2 实测 10 条简讯 → 782pt > 742pt 溢出 5.4%，
         # 反逼 autofit 全局降字号拖垮 P1）。上限让每版只追加 2 条补稿。
         for b in briefs[:n_briefs + 2]:
-            out.append(f"**{_clean_headline(b['title'])}:** {b.get('summary', '')[:150]} — {b['source']}.")
+            # 2026-08-07 用户要求：简讯归属 = 站点 + 日期（有记者再加记者名）。
+            # 多作者压缩为 "首名 et al."——简讯单行过长会推高版面高度
+            # （AWS 4 作者名单实测拖长 ~40 字符/条）。格式:
+            #   — {站点}, {日期}. / — {记者} et al., {站点}, {日期}.
+            attr = []
+            author = clean_author(b.get("author", ""))
+            if author:
+                first = author.split(",")[0].strip()
+                attr.append(first + " et al." if "," in author else first)
+            attr.append(b.get("source", ""))
+            d = fmt_date(b)
+            if d:
+                attr.append(d)
+            suffix = ", ".join(attr)
+            out.append(f"**{_clean_headline(b['title'])}:** {b.get('summary', '')[:150]} — {suffix}.")
     return "\n".join(out)
 
 

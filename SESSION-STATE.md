@@ -1,10 +1,10 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-06 23:55 UTC — 第十轮：晚刊出报闭环 + 4 处修复
-> 状态：**全链路打通 + 4 版填充全达标 + 晚刊出报闭环 + 4 处新修复**（imposer 回归 + linotype 25/25；66 源 53 走 RSSHub；FreshRSS 50 feed 1322 篇；晚刊 P1 95% / P2 104% / P3 100% / P4 102%，autofit 收敛 columns=3/10.84pt + demand 无需求 + pdfcheck 5/5；博客已发布 clid.net）
+> 保存：2026-08-07 00:50 UTC — 第十一轮：新闻报道归属增强（日期/站点/记者）
+> 状态：**全链路打通 + 4 版填充全达标 + 归属字段全量落地**（imposer 回归 58/58 + linotype 28/28；晚刊 P1 98% / P2 104% / P3 100% / P4 100%，autofit 收敛 columns=3/10.61pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
 > 血泪经验：**59 条**（#1-59 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-59 出报闭环）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 8dca6a9）+ **8cli/linotype**（main @ 34b32c0）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 归属增强提交）+ **8cli/linotype**（main @ 归属增强提交）
 
 ## 一、项目定位
 
@@ -340,6 +340,19 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 58. **补稿累积无上限过冲**——BRIEFS 输出 [:n_briefs] 再截断丢补稿（第 2 截断点）+ 补稿无限累积（P2 10 条简讯 → 782pt > 742pt 溢出 5.4%），反逼 autofit 全局降字号拖垮 P1（95.4%→89%）。统一为上限 n_briefs + 2
 59. **autofit 收敛不重编译最终配置 = 产物与判定脱节**——二分搜索 best_bs == lo 时用内存缓存 fills 判定收敛，out.log/out.pdf 停在最后一次实际编译（二分上界试探，可能溢出）——实测迭代 5 达标 10.84pt 但 out.log 是迭代 6 的 10.92pt 溢出 106%，demand/visual 误读溢出数据假 FAIL。修复：收敛确认统一重编译 lo（最终配置），产物与收敛点一致；测试断言对齐 ≤5% 微小截断语义（vsplit 兜底是设计内行为）
 
+### 08-07 第十一轮：新闻报道归属增强（用户"加日期/站点/记者"）
+
+**用户要求**：新闻报道加上日期、来源站点、记者名字。三要素在素材 JSON 里齐全（author/date/source），缺的是成版写入逻辑。
+
+| # | 改动 | 内容 |
+|---|---|---|
+| 1 | `build_plates.py` | `clean_author` 清洗 RSS `;` 多作者（';A; B'→'A, B'）；`fmt_date` epoch/ISO/RFC2822 → `Aug 6, 2026`（URL 兜底，失败省略不伪造）；`byline_of` 补日期 → `By {记者} · {站点} · {日期}`；STORY-B 加 `BYLINE-B:` 独立署名；简讯归属 `— {站点}, {日期}.`（多作者压缩"首名 et al."防单行膨胀） |
+| 2 | `build.py` | 解析 `BYLINE-B:` → story['byline']；main-aside 传 `\asidestory` 3 参、等宽栏渲染 `\storybyline` |
+| 3 | `linotype.cls` | `\asidestory` 改 3 参 {标题}{署名}{正文}；新增 `\storybyline` 小字署名宏（74-76% 字号，栏窄紧凑） |
+| 4 | 验证 | 重生成晚刊：主条/副条/简讯全带归属；autofit 收敛 columns=3/10.61pt；fill P1 98% / P2 104% / P3 100% / P4 100%；demand 无需求；pdfcheck 4/4；视觉验收双页 PASS；imposer 58/58 + linotype **28/28**（新增 test_story_byline：BYLINE-B 解析→渲染→编译全链） |
+
+**要点**：`\byline` 渲染为全大写（字体特征），PDF 提取文本需大小写不敏感匹配；简讯归属在 PDF 中跨行连字符断开（FER-GUSON）是提取噪声，渲染正常。副条署名新增后 P1 填充 95.4%→98%（署名行增加版头高度）。
+
 ## 六、目录状态
 
 ```
@@ -369,8 +382,8 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
   卷: freshrss-data  ← 持久化（--restart unless-stopped）
 
 GitHub：
-  8cli/linotype  @ 34b32c0  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；build.py 收敛重编译修复）
-  8cli/imposer   @ 55f1802  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十轮状态含血泪 #56-59）
+  8cli/linotype  @ 归属增强提交  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；BYLINE-B 解析 + \storybyline）
+  8cli/imposer   @ 归属增强提交  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十一轮归属增强 + 血泪 #56-59）
   8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
   博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
 ```

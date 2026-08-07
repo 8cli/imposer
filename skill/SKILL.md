@@ -163,7 +163,10 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 - **已接入**：CNSA（P3 中国航天官方）、ESA（P3 欧洲航天）、OpenAI/Anthropic（P2）
 
 - 信源清单：`scripts/sources.json`（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 中国科技，全面亲中）
-- 归属铁律：`By {记者} · {站点}`；无记者 `By {站点} News Desk`；简讯末尾标站点；付费墙退 RSS 摘要标注 `[付费墙]`
+- 归属铁律（2026-08-07 用户要求补日期）：`By {记者} · {站点} · {日期}`；无记者 `By {站点} News Desk · {日期}`；
+  日期取素材 date（epoch/ISO/RFC2822）→ 英文格式 `Aug 6, 2026`，解析失败省略不伪造；多作者 `;` 分隔清洗为 `, ` 连接；
+  副条 STORY-B 独立署名 `BYLINE-B:`（linotype 渲染为 \storybyline/\asidestory 3 参）；
+  简讯末尾标 `— {站点}, {日期}.`（有记者再加 `{记者} et al.,` 前缀，多作者压缩）；付费墙退 RSS 摘要标注 `[付费墙]`
 - 智库深度文章：每期至少一篇（CSIS/Brookings/RAND/CFR 等，有更新才放）
 - 亲中编辑原则：涉华报道以中国官方口径为准；西方主流仅补充
 
