@@ -1,10 +1,10 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-07 00:50 UTC — 第十一轮：新闻报道归属增强（日期/站点/记者）
-> 状态：**全链路打通 + 4 版填充全达标 + 归属字段全量落地**（imposer 回归 58/58 + linotype 28/28；晚刊 P1 98% / P2 104% / P3 100% / P4 100%，autofit 收敛 columns=3/10.61pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者）
+> 保存：2026-08-07 02:00 UTC — 第十一轮：归属增强 + 主栏补白 + 垃圾过滤 + 视觉协议修复
+> 状态：**全链路打通 + 4 版填充全达标 + 主栏底部填满 + 垃圾素材全剔除**（imposer 回归 58/58 + linotype 30/30；晚刊 P1 101% / P2 98% / P3 96% / P4 96%，autofit 收敛 columns=3/10.3pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者；P1 主栏底部空白 37-41mm → 0.7/0.0mm；26 条 UI/页脚垃圾剔除）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
 > 血泪经验：**59 条**（#1-59 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-59 出报闭环）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 665ecd8）+ **8cli/linotype**（main @ bda055e）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 第十一轮提交）+ **8cli/linotype**（main @ 第十一轮提交）
 
 ## 一、项目定位
 
@@ -352,6 +352,20 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 | 4 | 验证 | 重生成晚刊：主条/副条/简讯全带归属；autofit 收敛 columns=3/10.61pt；fill P1 98% / P2 104% / P3 100% / P4 100%；demand 无需求；pdfcheck 4/4；视觉验收双页 PASS；imposer 58/58 + linotype **28/28**（新增 test_story_byline：BYLINE-B 解析→渲染→编译全链） |
 
 **要点**：`\byline` 渲染为全大写（字体特征），PDF 提取文本需大小写不敏感匹配；简讯归属在 PDF 中跨行连字符断开（FER-GUSON）是提取噪声，渲染正常。副条署名新增后 P1 填充 95.4%→98%（署名行增加版头高度）。
+
+### 08-07 第十一轮（续）：主栏补白 + 垃圾过滤 + 视觉协议修复（用户"P1 左下角有空间为什么没补"）
+
+**用户质疑**：P1 主栏底部空 37-41mm（像素实测），fill 98% 达标但"最深油墨"测量掩盖了列内空白（侧栏 BRIEFS 垫底）。且主栏补的简讯是 VOA 播放器 UI 文案垃圾。
+
+| # | 改动 | 内容 |
+|---|---|---|
+| 5 | `linotype.cls` | `\mainstory` 改 7 参 {…}{左补白}{右补白} + 新增 `\mainbrief`（栏底小字简讯）；colH 修复——有补白时栏高 = contentH − 版头（正文 + \vss 弹性 + 简讯贴底），切分仍按正文/2（内容平衡）；vtop dp 预留 12pt 防 descender 溢出截断 |
+| 6 | `build.py` | 解析 `MAINBRIEFS:` 段 → p['mainbriefs'] → \mainstory 6/7 参 |
+| 7 | `build_plates.py` | P1 简讯 2→4（2 主栏 MAINBRIEFS + 2 侧栏 BRIEFS）；主栏补白 fulltext 前 400 字符（summary 只 400 字符截断，更满）；`_is_junk` UI/页脚垃圾过滤（VOA 播放器文案/TASS 页脚/CSIS 栏目页/订阅引导，`\xa0` 归一化），剔除 26 条打印审计 |
+| 8 | `pixelcheck.py` + `build.py` | **视觉协议断裂修复**：layout.json sheets 按页分（front=[页1两版] back=[页2两版]，旧版 4 版塞 front）+ PNG 页码映射（out-v-N → front/back）+ analyze 跳过每列首个 ≥min_gap 空白带（版头左对齐右侧留白是正常设计）——此前协议不匹配回退像素启发式，main-aside 版头右侧被误报（实测墨 9.5% 却报空） |
+| 9 | 验证 | P1 主栏底部空白 37-41mm → **0.7/0.0mm**；fill P1 98%→**101%**（P2 98/P3 96/P4 96 全达标）；Overfull plate 0 条（简讯填充后自然高 ≤ contentH）；视觉双页 PASS；imposer 58/58 + linotype **30/30**（新增 test_mainbriefs） |
+
+**根因链**：主栏底部空白 = colH 用 `min(正文/2, contentH−版头)`——短正文时 colH=正文/2，\vss 无空间，栏底空；简讯加在 vtop 里被 colH 截断。修复 = 有补白时 colH 放宽到 contentH−版头 + \vss 弹性贴底。垃圾进版 = fetch 层把播放器/页脚/栏目页当文章摘要（VOA 'Embed...clipboard' 8 条、TASS 页脚 6 条、CSIS 部门页 4 条）。
 
 ## 六、目录状态
 

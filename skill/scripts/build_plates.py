@@ -536,28 +536,79 @@ def write_plate(p: dict, idx: int, used_urls: list | None = None, n_briefs: int 
             out.append(para)
         out.append("")
     if briefs:
-        out.append("BRIEFS:")
-        # 2026-08-06 修复：pick_briefs 返回"补稿全保留 + 普通简讯补足 n"
-        # （append-not-replace 语义，解决替换空转）。此处总量上限 n_briefs+2：
-        # 补稿累积无上限会过冲（P2 实测 10 条简讯 → 782pt > 742pt 溢出 5.4%，
-        # 反逼 autofit 全局降字号拖垮 P1）。上限让每版只追加 2 条补稿。
-        for b in briefs[:n_briefs + 2]:
-            # 2026-08-07 用户要求：简讯归属 = 站点 + 日期（有记者再加记者名）。
-            # 多作者压缩为 "首名 et al."——简讯单行过长会推高版面高度
-            # （AWS 4 作者名单实测拖长 ~40 字符/条）。格式:
-            #   — {站点}, {日期}. / — {记者} et al., {站点}, {日期}.
-            attr = []
-            author = clean_author(b.get("author", ""))
-            if author:
-                first = author.split(",")[0].strip()
-                attr.append(first + " et al." if "," in author else first)
-            attr.append(b.get("source", ""))
-            d = fmt_date(b)
-            if d:
-                attr.append(d)
-            suffix = ", ".join(attr)
-            out.append(f"**{_clean_headline(b['title'])}:** {b.get('summary', '')[:150]} — {suffix}.")
+        # 2026-08-07 用户要求：P1 主栏底部空 37-41mm（主条自然高/2 不足
+        # colH 上限），简讯错配全进侧栏——拆 2 条给主栏底部（MAINBRIEFS 段，
+        # linotype \mainstory 6/7 参 → 两栏底部补白），其余进侧栏 BRIEFS。
+        if idx == 1:
+            main_briefs, aside_briefs = briefs[:2], briefs[2:]
+            if main_briefs:
+                out.append("MAINBRIEFS:")
+                # 主栏补白摘要加长（400 字符 = fulltext 全文导语）——栏底空间大，
+                # 短摘要填不满（实测 2 条 35 词简讯只填 17mm，主栏仍有 20mm 空白
+                # ≈ 55 词；400 字符 ≈ 65 词刚好填满）
+                for b in main_briefs:
+                    out.append(_fmt_brief(b, body_len=400))
+        else:
+            aside_briefs = briefs
+        if aside_briefs:
+            out.append("BRIEFS:")
+            # 2026-08-06 修复：pick_briefs 返回"补稿全保留 + 普通简讯补足 n"
+            # （append-not-replace 语义，解决替换空转）。此处总量上限 n_briefs+2：
+            # 补稿累积无上限会过冲（P2 实测 10 条简讯 → 782pt > 742pt 溢出 5.4%，
+            # 反逼 autofit 全局降字号拖垮 P1）。上限让每版只追加 2 条补稿。
+            for b in aside_briefs[:n_briefs + 2]:
+                out.append(_fmt_brief(b))
     return "\n".join(out)
+
+
+def _fmt_brief(b: dict, body_len: int = 150) -> str:
+    """单条简讯格式（2026-08-07 用户要求归属 = 站点 + 日期 + 记者）：
+    `**标题:** 内容 — {站点}, {日期}.`（有记者加 `{记者} et al.,` 前缀，
+    多作者压缩首名防单行膨胀——AWS 4 作者名单实测拖长 ~40 字符/条）。
+    MAINBRIEFS 与 BRIEFS 共用；body_len 控制摘要长度（主栏补白 220 更满）。"""
+    attr = []
+    author = clean_author(b.get("author", ""))
+    if author:
+        first = author.split(",")[0].strip()
+        attr.append(first + " et al." if "," in author else first)
+    attr.append(b.get("source", ""))
+    d = fmt_date(b)
+    if d:
+        attr.append(d)
+    suffix = ", ".join(attr)
+    # 正文: fulltext 优先（简讯补白需要长度，summary 只 400 字符 ≈ 60 词
+    # 不够填主栏底部；fulltext 才有完整导语）。去图片说明噪音
+    # （'Photo: VCG' 等，抓取器把图注拼进了正文开头）。
+    body = b.get("fulltext") or b.get("summary", "")
+    body = re.sub(r"\s*(Photo|Image|Video|Caption):\s*[\w\s.-]+?\s{2,}", " ", body)
+    body = re.sub(r"\s+", " ", body).strip()
+    return f"**{_clean_headline(b['title'])}:** {body[:body_len]} — {suffix}."
+
+
+_JUNK_RE = re.compile(
+    r"copied to your clipboard|no live streaming|embed the code|"
+    r"subscribe to our|sign up for our newsletter|click here to|"
+    r"terms of use|privacy policy|all rights reserved|registration certificate|"
+    r"advertising terms|back to top|this page is unavailable|javascript is required|"
+    # 栏目/部门页模板（2026-08-07 CSIS: 分类页当文章抓取，summary 是部门介绍）
+    r"department tackles|tackles the most complex issues|featured book|"
+    r"unlocking the missing|president, economic security",
+    re.IGNORECASE,
+)
+
+
+def _is_junk(item: dict) -> bool:
+    """UI/导航/页脚垃圾素材检测（2026-08-07 用户发现 VOA 播放器 UI 文案进版）。
+
+    VOA 8 条摘要全是 'Embed The code has been copied to your clipboard... No
+    live streaming'（视频页前端交互文案，fulltext 0 词）；TASS 6 条摘要全是
+    'TASS today Advertising Terms of use Contacts © TASS... 注册号'（页脚模板）。
+    这类素材不是新闻报道内容，选材前必须剔除——否则简讯槽被垃圾霸占
+    （P1 实测 4 条简讯 3 条是垃圾），真新闻（TASS 国防部重组 1719 词）反而
+    排后面。特征 = 前端交互/页脚/订阅引导模板文本。"""
+    text = ' '.join([item.get('summary', '') or '', item.get('fulltext', '') or ''])
+    text = text.replace('\xa0', ' ')  # 非断行空格归一化（RSS 摘要常见，正则按普通空格匹配）
+    return bool(_JUNK_RE.search(text))
 
 
 def write_plates(results: dict, out_dir: Path) -> None:
@@ -580,7 +631,13 @@ def write_plates(results: dict, out_dir: Path) -> None:
     # 2026-08-06 第七轮实测微调: P3 92.1% 缺 1 条（3→4 补填充），
     # P4 104.5% 超量（4→3 防全局压字号拖累 P2/P3——P4 超 33.7pt 微超
     # 会触发 autofit 溢出迭代压字号，P2/P3 掉到 92%）
-    briefs_per_plate = {1: 2, 2: 6, 3: 5, 4: 3}  # P1 血泪 #55: 侧栏 = STORY-B 188 词 + 简讯，3 条 792pt > contentH 742.6 vsplit 截断 49.8pt（内容静默丢失）；2 条 → 容纳。P3 94.7% 缺 2pt → 5 条补足
+    briefs_per_plate = {1: 4, 2: 6, 3: 5, 4: 3}
+    # P1（2026-08-07）：简讯 2 → 4——拆 2 条主栏底部（MAINBRIEFS）+ 2 条侧栏。
+    #   主栏底部空 37-41mm（主条 340 词自然高/2 = 481pt < colH 上限 598pt，
+    #   简讯进侧栏填不满主栏），主栏底补白是报纸标准做法。
+    #   侧栏仍只 2 条（血泪 #55: 侧栏 = STORY-B 188 词 + 简讯，3 条 792pt >
+    #   contentH 742.6 vsplit 截断 49.8pt 内容静默丢失）。
+    # P3 94.7% 缺 2pt → 5 条补足
     seen = set()  # 四版池级已用 URL（终审 I-2 跨版去重）
     for plate, news in results.items():
         idx = plate_names.get(plate)
@@ -590,6 +647,16 @@ def write_plates(results: dict, out_dir: Path) -> None:
         pool = [x for x in news if x["url"] not in seen]
         if not pool:
             print(f"  ⚠️ {plate}: 素材 URL 已全部被其他版使用（跨版去重），跳过")
+            continue
+        # 2026-08-07: UI/页脚垃圾素材剔除（VOA 播放器文案/TASS 页脚模板），
+        # 否则简讯槽被垃圾霸占。剔除记录供审料门审计。
+        junk = [x for x in pool if _is_junk(x)]
+        if junk:
+            shown = "、".join(x.get("title", "")[:30] for x in junk[:3])
+            print(f"  ⚠️ {plate}: {len(junk)} 条 UI/页脚垃圾素材剔除（{shown}…）")
+        pool = [x for x in pool if not _is_junk(x)]
+        if not pool:
+            print(f"  ⚠️ {plate}: 垃圾剔除后无剩余素材，跳过")
             continue
         used_urls = []
         text = write_plate({"news": pool}, idx, used_urls, briefs_per_plate.get(idx, 6))
