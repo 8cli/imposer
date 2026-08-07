@@ -24,6 +24,8 @@ DAILY=~/news/daily/$(date +%F); mkdir -p $DAILY/sources $DAILY/plates
 python3 ~/.claude/skills/imposer/scripts/fetch_freshrss.py \
   ~/.claude/skills/imposer/scripts/sources.json $DAILY > $DAILY/fetch.log
 # 3. 组织成版（需人工审查素材后执行——见"审料门"）
+#    出版日期（2026-08-07）: P1 版顶 \dateline 日期线（期次识别）。
+#    缺省 = 本地今天（与 $DAILY=$(date +%F) 一致）；重建旧刊显式传 --date "Aug 6, 2026"
 python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
 # 4. 调 linotype 排版（autofit 默认开 + --demand 输出补稿单）
 #    注意: linotype build.py 需在引擎目录运行（cwd 须含 linotype.cls）
@@ -177,7 +179,7 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 
 ## 版面结构（每版）
 
-- P1 国际军事：main-aside（主条 2 栏 + 侧栏）+ 智库深度
+- P1 国际军事：main-aside（主条 2 栏 + 侧栏）+ 智库深度；**版顶出版日期线**（DATE 字段 → linotype `\dateline`，2026-08-07）
 - P2 AI 科技 / P3 太空 / P4 中国科技：等宽多栏
 - 每版：中长篇主条 ×2 + 简讯 ×3-5
 

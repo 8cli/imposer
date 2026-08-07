@@ -1,10 +1,10 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
-> 保存：2026-08-07 02:00 UTC — 第十一轮：归属增强 + 主栏补白 + 垃圾过滤 + 视觉协议修复
-> 状态：**全链路打通 + 4 版填充全达标 + 主栏底部填满 + 垃圾素材全剔除**（imposer 回归 58/58 + linotype 30/30；晚刊 P1 101% / P2 98% / P3 96% / P4 96%，autofit 收敛 columns=3/10.3pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者；P1 主栏底部空白 37-41mm → 0.7/0.0mm 且无重叠；26 条 UI/页脚垃圾剔除）
-> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
-> 血泪经验：**60 条**（#1-60 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-60 出报闭环与补白）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 41e5835）+ **8cli/linotype**（main @ 2787bae）
+> 保存：2026-08-07 04:35 UTC — 第十二轮：第一版出版日期线（用户"每份报纸第一版加出版日期"）
+> 状态：**全链路打通 + 4 版填充全达标 + 主栏底部填满 + 垃圾素材全剔除 + 第一版出版日期**（imposer 回归 59/59 + linotype 35/35；晚刊 P1 101% / P2 104% / P3 101% / P4 101%，autofit 收敛 columns=3/10.69pt + demand 无需求 + pdfcheck 5/5 + 视觉验收双页 4/4 PASS；主条/副条/简讯全部带 日期·站点·记者；P1 主栏底部 0.7/0.0mm 无重叠；P1 版顶 "AUG 6, 2026" 日期线精确居中）
+> 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-7 + bug #1-35）
+> 血泪经验：**61 条**（#1-61 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-60 出报闭环与补白 + #61 日期线 probe）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ b08dd84 + 本轮文档）+ **8cli/linotype**（main @ 7c93c89 + 本轮文档）
 
 ## 一、项目定位
 
@@ -340,6 +340,7 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 58. **补稿累积无上限过冲**——BRIEFS 输出 [:n_briefs] 再截断丢补稿（第 2 截断点）+ 补稿无限累积（P2 10 条简讯 → 782pt > 742pt 溢出 5.4%），反逼 autofit 全局降字号拖垮 P1（95.4%→89%）。统一为上限 n_briefs + 2
 
 60. **\setbox\A=\B 中 \B 是盒号整数不合法**（2026-08-07 主栏补白重叠）——RHS 需 \box\B 前缀（\box 引用盒），否则 'A <box> was supposed to be here' 中断执行（\linotype@cutbox 是 \chardef 整数）。同类：leftbrief/rightbrief 共用一盒——\def 执行时才 \unvbox，此时盒已被 rightbrief 覆盖 → 两栏都显示右简讯。修复：独立盒 briefbox/briefboxR + \box\cutbox 引用。
+61. **\begin{center} 在 \vbox 内是 trivlist + \rule 段落行带 strut**（2026-08-07 日期线 probe）——两个独立坑同时膨胀版顶块高 3×：(a) center 环境的 \topsep 把日期行推下 8mm、块高虚增；(b) `\rule{w}{h}\\[x]` 的 \leavevmode 段落行带 \baselineskip strut，规则对间距 5.1mm 而非 0.5mm（masthead/sectionstrip 一直有此隐患，未在实报暴露）。修复：\dateline 用 \offinterlineskip + \hbox 行（无 strut）+ \hfil 居中，几何精确可控（总高 ~6.7mm），\vbox 量高与 \unvbox 渲染同一盒。
 59. **autofit 收敛不重编译最终配置 = 产物与判定脱节**——二分搜索 best_bs == lo 时用内存缓存 fills 判定收敛，out.log/out.pdf 停在最后一次实际编译（二分上界试探，可能溢出）——实测迭代 5 达标 10.84pt 但 out.log 是迭代 6 的 10.92pt 溢出 106%，demand/visual 误读溢出数据假 FAIL。修复：收敛确认统一重编译 lo（最终配置），产物与收敛点一致；测试断言对齐 ≤5% 微小截断语义（vsplit 兜底是设计内行为）
 
 ### 08-07 第十一轮：新闻报道归属增强（用户"加日期/站点/记者"）
@@ -381,6 +382,19 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 
 **最终验证**：P1 主栏底部 0.7/0.0mm 填满，两栏简讯与正文分离（间距 11/10mm），0 编译错误；fill P1 101%；视觉双页 PASS；imposer 58/58 + linotype 30/30。linotype @ 31ba131（fix: 主栏补白简讯重叠修复——独立盒 + \box 引用）。
 
+### 08-07 第十二轮：第一版出版日期线（用户"在每一份报纸第一版加上出版日期，以便识别"）
+
+**需求**：每份报纸第一版（P1）页顶加出版日期，期次识别。此前 P1 无报头无日期，日期只出现在署名里。
+
+**实现**（三端贯通）：
+- **build_plates.py**：`--date "Aug 6, 2026"` 参数（缺省 = 本地今天，与 daily 目录 `$(date +%F)` 一致；重建旧刊显式传）→ 只在 P1 输出 `DATE:` 字段（`_fmt_pub` 与 byline 同格式）
+- **build.py**：解析 `DATE:` → 版顶渲染 `\dateline{...}`（任意版通用，imposer 决定只放 P1）
+- **linotype.cls**：`\dateline` 宏——双细线 + 居中日期（LetterSpace 14 全大写）+ 双细线；**高度计入版心预算**（`\linotype@topused`）：mainaside 截断预算 / 版头 @colht / mainstory colH 全部减掉，否则日期线 + 满版 mainaside 超 contentH → plate vsplit 切不动 mainaside 整盒 → 整个主栏静默丢弃只剩日期线（血泪 #61 同类）。每版开头重置 topused
+
+**probe 发现两个 TeX 坑**（血泪 #61）：`\begin{center}` 在 \vbox 内是 trivlist（\topsep 推下 8mm、块高虚增 3×）；`\rule+\\` 段落行带 strut（规则对间距 5.1mm）。修复：\offinterlineskip + \hbox 行 + \hfil 居中。顺带修复 \sectionstrip 同款 strut bug。
+
+**最终验证**：P1 版顶渲染 "AUG 6, 2026"（重心 x=105.1mm vs 内容中线 105.0mm，精确居中）；pdfcheck 5/5 + 视觉双页 4/4 PASS + demand 无需求；fill 101/104/101/101%；imposer 59/59 + linotype 35/35（新增 test_dateline：DATE 解析 + 编译 0 Overfull + PDF 文本断言日期与主条存活——防 vsplit 静默丢 mainaside 回归；新增 test_pub_date_only_on_p1：DATE 只在 P1）。实报 ~/news/daily/2026-08-06/out.pdf 重新生成（--date "Aug 6, 2026"）。
+
 ## 六、目录状态
 
 ```
@@ -410,8 +424,8 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
   卷: freshrss-data  ← 持久化（--restart unless-stopped）
 
 GitHub：
-  8cli/linotype  @ 2787bae  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；BYLINE-B 解析 + \storybyline）
-  8cli/imposer   @ 41e5835  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十一轮归属增强 + 主栏补白 + 血泪 #56-60）
+  8cli/linotype  @ 7c93c89  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；\dateline 日期线 + 版心预算集成 + \sectionstrip 修复 + bug #35）
+  8cli/imposer   @ b08dd84  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十二轮出版日期 --date → P1 DATE 字段 + 血泪 #61）
   8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
   博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
 ```
