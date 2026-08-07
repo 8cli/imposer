@@ -1,10 +1,10 @@
 # Imposer — Linotype 的拼版工（会话状态交接）
 
 > 保存：2026-08-07 02:00 UTC — 第十一轮：归属增强 + 主栏补白 + 垃圾过滤 + 视觉协议修复
-> 状态：**全链路打通 + 4 版填充全达标 + 主栏底部填满 + 垃圾素材全剔除**（imposer 回归 58/58 + linotype 30/30；晚刊 P1 101% / P2 98% / P3 96% / P4 96%，autofit 收敛 columns=3/10.3pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者；P1 主栏底部空白 37-41mm → 0.7/0.0mm；26 条 UI/页脚垃圾剔除）
+> 状态：**全链路打通 + 4 版填充全达标 + 主栏底部填满 + 垃圾素材全剔除**（imposer 回归 58/58 + linotype 30/30；晚刊 P1 101% / P2 98% / P3 96% / P4 96%，autofit 收敛 columns=3/10.3pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者；P1 主栏底部空白 37-41mm → 0.7/0.0mm 且无重叠；26 条 UI/页脚垃圾剔除）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
-> 血泪经验：**59 条**（#1-59 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-59 出报闭环）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 178ade0）+ **8cli/linotype**（main @ e6e6a6d）
+> 血泪经验：**60 条**（#1-60 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-60 出报闭环与补白）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 178ade0）+ **8cli/linotype**（main @ 31ba131）
 
 ## 一、项目定位
 
@@ -338,6 +338,8 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 56. **split_paragraphs 按句切段 + max_paras 硬截断丢主条词数**——"每句一行"的短句体全文（Cloudflare 等科技博客）把 280 词切成 20+ 短段，max_paras=12 截断后只剩 162/280 词（P2 fill 84.7% 虚低）。修复：动态目标段长 = ceil(词数/max_paras)——词数全保留 + 段数用满；散文体（句长 ≥ 目标）每句一段等价原逻辑
 57. **固定简讯槽 + 补稿排最前 = 替换空转**——pick_briefs 选满固定 n 后新补稿挤掉同槽旧简讯，若新旧长度相近 fill 恒定不涨（P3/P4 3 轮供给 fill 纹丝不动）。修复：补稿（tier ≤1）全保留追加 + 普通简讯补足 n（append-not-replace 语义）
 58. **补稿累积无上限过冲**——BRIEFS 输出 [:n_briefs] 再截断丢补稿（第 2 截断点）+ 补稿无限累积（P2 10 条简讯 → 782pt > 742pt 溢出 5.4%），反逼 autofit 全局降字号拖垮 P1（95.4%→89%）。统一为上限 n_briefs + 2
+
+60. **\setbox\A=\B 中 \B 是盒号整数不合法**（2026-08-07 主栏补白重叠）——RHS 需 \box\B 前缀（\box 引用盒），否则 'A <box> was supposed to be here' 中断执行（\linotype@cutbox 是 \chardef 整数）。同类：leftbrief/rightbrief 共用一盒——\def 执行时才 \unvbox，此时盒已被 rightbrief 覆盖 → 两栏都显示右简讯。修复：独立盒 briefbox/briefboxR + \box\cutbox 引用。
 59. **autofit 收敛不重编译最终配置 = 产物与判定脱节**——二分搜索 best_bs == lo 时用内存缓存 fills 判定收敛，out.log/out.pdf 停在最后一次实际编译（二分上界试探，可能溢出）——实测迭代 5 达标 10.84pt 但 out.log 是迭代 6 的 10.92pt 溢出 106%，demand/visual 误读溢出数据假 FAIL。修复：收敛确认统一重编译 lo（最终配置），产物与收敛点一致；测试断言对齐 ≤5% 微小截断语义（vsplit 兜底是设计内行为）
 
 ### 08-07 第十一轮：新闻报道归属增强（用户"加日期/站点/记者"）
@@ -396,7 +398,7 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
   卷: freshrss-data  ← 持久化（--restart unless-stopped）
 
 GitHub：
-  8cli/linotype  @ e6e6a6d  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；BYLINE-B 解析 + \storybyline）
+  8cli/linotype  @ 31ba131  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；BYLINE-B 解析 + \storybyline）
   8cli/imposer   @ 178ade0  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十一轮归属增强 + 血泪 #56-59）
   8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
   博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
