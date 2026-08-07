@@ -4,7 +4,7 @@
 > 状态：**全链路打通 + 4 版填充全达标 + 主栏底部填满 + 垃圾素材全剔除**（imposer 回归 58/58 + linotype 30/30；晚刊 P1 101% / P2 98% / P3 96% / P4 96%，autofit 收敛 columns=3/10.3pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者；P1 主栏底部空白 37-41mm → 0.7/0.0mm 且无重叠；26 条 UI/页脚垃圾剔除）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
 > 血泪经验：**60 条**（#1-60 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-60 出报闭环与补白）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 178ade0）+ **8cli/linotype**（main @ 31ba131）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ d7d9a56）+ **8cli/linotype**（main @ 31ba131）
 
 ## 一、项目定位
 
@@ -369,6 +369,18 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 
 **根因链**：主栏底部空白 = colH 用 `min(正文/2, contentH−版头)`——短正文时 colH=正文/2，\vss 无空间，栏底空；简讯加在 vtop 里被 colH 截断。修复 = 有补白时 colH 放宽到 contentH−版头 + \vss 弹性贴底。垃圾进版 = fetch 层把播放器/页脚/栏目页当文章摘要（VOA 'Embed...clipboard' 8 条、TASS 页脚 6 条、CSIS 部门页 4 条）。
 
+### 08-07 第十一轮（终）：P1 左下角重叠修复（用户"P1 左下角出现了内容重叠"，血泪 #60）
+
+初次方案（\vss 弹性 + 共用盒）在实报暴露三个 TeX 语义坑，用户目检发现左下角文字重叠：
+
+| # | 坑 | 后果 | 修复 |
+|---|---|---|---|
+| 1 | `\setbox\A=\B` 中 `\B` 是盒号整数不合法——RHS 需 `\box\B` 前缀 | `A <box> was supposed to be here` 中断执行 → 右栏简讯整个消失（底空 59mm） | `\setbox\linotype@briefbox=\box\linotype@cutbox` |
+| 2 | left/rightbrief 共用 `\linotype@briefbox` 一盒——`\def` 执行时才 `\unvbox`，此时盒已被 rightbrief 覆盖 | 两栏都显示右简讯，Democratizing 丢失 | 独立盒 `briefbox`/`briefboxR` |
+| 3 | 纯 `\vss\mainbrief` 无空间保护——正文+简讯 > colH 时 vss 压到 0 | 简讯紧贴正文最后一行 = 视觉重叠 | 简讯盒测高 → vsplit 截断到剩余空间（colH−正文−3mm 最小间隔）→ `\vskip 3mm plus 1fil` 弹性贴底 |
+
+**最终验证**：P1 主栏底部 0.7/0.0mm 填满，两栏简讯与正文分离（间距 11/10mm），0 编译错误；fill P1 101%；视觉双页 PASS；imposer 58/58 + linotype 30/30。linotype @ 31ba131（fix: 主栏补白简讯重叠修复——独立盒 + \box 引用）。
+
 ## 六、目录状态
 
 ```
@@ -399,7 +411,7 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
 
 GitHub：
   8cli/linotype  @ 31ba131  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；BYLINE-B 解析 + \storybyline）
-  8cli/imposer   @ 178ade0  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十一轮归属增强 + 血泪 #56-59）
+  8cli/imposer   @ d7d9a56  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十一轮归属增强 + 主栏补白 + 血泪 #56-60）
   8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
   博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
 ```
