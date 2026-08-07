@@ -4,7 +4,7 @@
 > 状态：**全链路打通 + 4 版填充全达标 + 归属字段全量落地**（imposer 回归 58/58 + linotype 28/28；晚刊 P1 98% / P2 104% / P3 100% / P4 100%，autofit 收敛 columns=3/10.61pt + demand 无需求 + pdfcheck 4/4 + 视觉验收双页 PASS；主条/副条/简讯全部带 日期·站点·记者）
 > 完整开发史：`docs/DEVELOPMENT-HISTORY.md`（Phase 0-10 + 08-06 十轮）+ linotype `docs/DEVELOPMENT-HISTORY.md`（Phase 0-6 + bug #1-33）
 > 血泪经验：**59 条**（#1-59 连续，含 #46 调研方法论全局规则 + #47-55 几何修复 + #56-59 出报闭环）
-> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 归属增强提交）+ **8cli/linotype**（main @ 归属增强提交）
+> 公开仓库：**https://github.com/8cli/imposer**（MIT，master @ 665ecd8）+ **8cli/linotype**（main @ 665ecd8）
 
 ## 一、项目定位
 
@@ -382,8 +382,8 @@ imposer 是 skill，skill 由 agent 调用——agent 本身就是 LLM，改写�
   卷: freshrss-data  ← 持久化（--restart unless-stopped）
 
 GitHub：
-  8cli/linotype  @ 归属增强提交  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；BYLINE-B 解析 + \storybyline）
-  8cli/imposer   @ 归属增强提交  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十一轮归属增强 + 血泪 #56-59）
+  8cli/linotype  @ 665ecd8  main   （排版引擎，需求方，fill_min=0.95，单一仓库 ~/news/latex；BYLINE-B 解析 + \storybyline）
+  8cli/imposer   @ 665ecd8  master （拼版工，供给方，FreshRSS 查询器 + 66 源 53 走 RSSHub；第十一轮归属增强 + 血泪 #56-59）
   8cli/claude    @ 7829d5d  main   （Claude 全局规则 CLAUDE.md + 配置记录，含调研铁律 6 条）
   博客            https://www.clid.net/2026/08/ai.html（Linotype+Imposer 技术回顾）
 ```
