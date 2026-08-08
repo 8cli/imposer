@@ -6,7 +6,6 @@
       <out_dir>/fetch_results.json（E2E 接口，供 build_plates.py 消费）
 依赖: 仅标准库（urllib / xml.etree / re / json / argparse）
 """
-import _bootstrap
 import argparse
 import json
 import re
@@ -375,7 +374,6 @@ def fetch_all(sources: dict, out_dir: Path, max_workers: int = 8) -> dict:
 
 
 if __name__ == "__main__":
-    _bootstrap.ensure_venv()
     ap = argparse.ArgumentParser()
     ap.add_argument("sources_json")
     ap.add_argument("out_dir")

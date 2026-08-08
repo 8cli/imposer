@@ -5,7 +5,6 @@
 素材来源: ① fetch 缓存（本日已抓未用）→ ② 定向抓取（该版块信源补抓）
 用法: python3 supply.py <demand.json> <fetch_results.json> <sources.json> <out_dir>
 """
-import _bootstrap
 import argparse, json, re, sys
 from pathlib import Path
 
@@ -194,7 +193,6 @@ def supply_requests(demand: dict, cache: dict, sources: dict, out_dir: Path,
 
 
 if __name__ == "__main__":
-    _bootstrap.ensure_venv()
     ap = argparse.ArgumentParser()
     ap.add_argument("demand_json")
     ap.add_argument("fetch_results_json")

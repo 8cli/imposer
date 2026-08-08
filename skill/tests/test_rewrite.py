@@ -64,7 +64,7 @@ def test_empty_llm_output_extractive_fallback():
         out = rw.rewrite(long_text, 10, 30, "GT", "Fallback")
         words = out.split()
         check(0 < len(words) <= 30, f"空输出兜底应为原文首 N 词，实际 {len(words)} 词")
-        check("quick" in words and "dog" in out, f"兜底应保留原文内容：{out[:60]!r}")
+        check("quick" in words and "dog" in words, f"兜底应保留原文内容：{out[:60]!r}")
     finally:
         rw._call_anthropic = orig
 

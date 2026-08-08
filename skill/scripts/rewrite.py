@@ -10,7 +10,6 @@
 输出: 改写后的压缩文本（stdout）
 依赖: anthropic 包（ANTHROPIC_API_KEY 环境变量）或 Claude CLI
 """
-import _bootstrap
 import argparse
 import json
 import os
@@ -138,7 +137,6 @@ def rewrite(summary: str, min_words: int, max_words: int,
 
 
 if __name__ == "__main__":
-    _bootstrap.ensure_venv()
     ap = argparse.ArgumentParser()
     ap.add_argument("summary", help="待压缩的报道原文/摘要")
     ap.add_argument("min_words", type=int, help="目标词数下限")
