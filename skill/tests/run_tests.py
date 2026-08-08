@@ -4,7 +4,8 @@ import sys, subprocess
 from pathlib import Path
 
 HERE = Path(__file__).parent
-TESTS = ["test_fetch.py", "test_demand.py", "test_supply.py", "test_build_plates.py", "test_rewrite.py"]
+TESTS = ["test_fetch.py", "test_demand.py", "test_supply.py", "test_build_plates.py",
+         "test_rewrite.py", "test_render_presswire.py"]
 
 def main():
     fails = 0

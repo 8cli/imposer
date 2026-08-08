@@ -1,15 +1,21 @@
 ---
 name: imposer
-description: Use when the user wants to produce a daily English newspaper (英文日报/报纸/做今天的日报/出报). Organizes source material from authoritative China-friendly news sources into linotype plates, runs linotype typesetting, reads its demand signals (demand.json requests for briefs/deep-dives to fill blank space) and supplies matching stories by topic/word-count/source-rank. Companion to the linotype typesetting skill.
+description: Use when the user wants to produce a daily English newspaper (英文日报/报纸/做今天的日报/出报). Organizes source material from authoritative China-friendly news sources into presswire plates, runs presswire typesetting, reads its demand signals (demand.json requests for briefs/deep-dives to fill blank space) and supplies matching stories by topic/word-count/source-rank. Companion to the presswire typesetting skill.
 ---
 
 # imposer — 英文日报编排
 
 ## 定位
 
-imposer 是 linotype 的**拼版工**：组织 4 版素材 → 调用 linotype 排版 → **接收 linotype 的补稿单（demand.json）→ 按单找稿交稿**（题材×篇幅×信源层级匹配）→ 产出 PDF + 信源归档 + 工作日志。
+imposer 是 presswire 的**拼版工**：组织 4 版素材 → 调用 presswire 排版 → **接收 presswire 的补稿单（demand.json）→ 按单找稿交稿**（题材×篇幅×信源层级匹配）→ 产出 PDF + 信源归档 + 工作日志。
 
-**核心关系（需求-供给契约）**：linotype 是需求方（版面缺内容时下补稿单），imposer 是供给方（按单找稿）。比单向信号更精确、更良性。
+**核心关系（需求-供给契约）**：presswire 是需求方（版面缺内容时下补稿单），imposer 是供给方（按单找稿）。比单向信号更精确、更良性。
+
+> 2026-08-08 切换：默认引擎从 linotype（LaTeX）→ **presswire（Typst）**。D2 红线保证契约
+> （plates 格式 / demand.json / layout.json / CLI 参数面）字节兼容，imposer 的
+> build_plates/supply/rewrite 零改动；仅引擎调用段 + parse_demand 改为 presswire 分支
+> （linotype 分支保留向后兼容）。切换收益：autofit 单次编译收敛（3-16 次 xelatex → 1 次
+> typst）、fill 从日志正则 → eval JSON 结构化、严重溢出 panic 硬门禁。
 
 **铁律**：材料组织与版面纪律耦合——写出的 plates 第一轮就接近版面，反馈环只是微调（≤2 轮）。
 
@@ -27,15 +33,20 @@ python3 ~/.claude/skills/imposer/scripts/fetch_freshrss.py \
 #    出版日期（2026-08-07）: P1 版顶 \dateline 日期线（期次识别）。
 #    缺省 = 本地今天（与 $DAILY=$(date +%F) 一致）；重建旧刊显式传 --date "Aug 6, 2026"
 python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY
-# 4. 调 linotype 排版（autofit 默认开 + --demand 输出补稿单）
-#    注意: linotype build.py 需在引擎目录运行（cwd 须含 linotype.cls）
+# 4. 调 presswire 排版（render_presswire 一键: 编译+fills+demand+健康报告）
+#    内存通讯（2026-08-08）: 自动走 typstpy 进程内编译（.venv312）——无 typst
+#    CLI subprocess、无日志正则；build.json 即结构化报告（含 article_mismatch
+#    信号，imposer 按"选/改文章"响应；--demand 照写 demand.json 审计）
+#    注意: --root ~/news 让 output（$DAILY/out.pdf）与模板资产（presswire_typst/）
+#    同处 Typst 沙箱内（$DAILY 在 ~/news/daily/ 下，模板在 ~/news/presswire/ 下）
 #    fill_min=0.95 严肃报纸标准：空白多则发补稿单（默认 0.45 宽松）
-cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
-  --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" --visual --demand > $DAILY/build.log 2>&1 && cd -
-# 5. 读需求 → 版面健康报告 + 补稿单
-python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
+python3 ~/.claude/skills/imposer/scripts/render_presswire.py $DAILY/plates $DAILY/out.pdf \
+  --root ~/news --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" \
+  --demand > $DAILY/build.json 2>&1
+# 5. 读需求 → 版面健康报告 + 补稿单（build.json 即报告；parse_demand 兼容旧流程可省略）
+cat $DAILY/build.json
 # 6. 需求-供给闭环（agent 执行改写——主路径）→ 见下节"闭环循环（agent 执行）"
-#    直到 linotype 返回"已填满"（demand.json 无需求或 ≤2 轮上限）。
+#    直到 presswire 返回"已填满"（demand.json 无需求或 ≤2 轮上限）。
 ```
 
 ## 闭环循环（agent 执行改写——主路径）
@@ -50,7 +61,9 @@ SSE 解析/CLI 污染一堆坑，且是绕路）。`supply.py` 输出 `needs_rew
 循环空转——终审 C-1a；supply 输出带 `used=True`，回写缓存即持久化，第 2 轮不会重复
 供给同一批素材——终审 C-1b）：
 
-1. **读需求**：`cat $DAILY/demand.json`。无 `plates` → 已填满，停止并报 ✅。
+1. **读需求**：`cat $DAILY/build.json`（或 demand.json）——build.json 即
+   完整报告（converged/article_mismatch/requests_by_plate）。无 `plates` 需求
+   → 已填满，停止并报 ✅。
 2. **按单找稿**：
    ```bash
    python3 ~/.claude/skills/imposer/scripts/supply.py \
@@ -69,12 +82,14 @@ SSE 解析/CLI 污染一堆坑，且是绕路）。`supply.py` 输出 `needs_rew
    对应版块数组（携带 used=True，防第 2 轮重复供给）。
 5. **重新成版**：`python3 ~/.claude/skills/imposer/scripts/build_plates.py $DAILY/fetch_results.json $DAILY`
    （关键步骤：先重新成版，plates 才反映补稿）。
-6. **重排 + 重读需求**：
+6. **重排 + 重读需求**（render_presswire 一步，内存通讯）：
    ```bash
-   cd ~/news/latex && python3 build.py $DAILY/plates $DAILY/out.tex \
-     --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" --demand > $DAILY/build.log 2>&1 && cd -
-   python3 ~/.claude/skills/imposer/scripts/parse_demand.py $DAILY/build.log --log $DAILY/out.log --demand $DAILY/demand.json
+   python3 ~/.claude/skills/imposer/scripts/render_presswire.py $DAILY/plates $DAILY/out.pdf \
+     --root ~/news --docopts "paper=a3,landscape,columns=3,plates=2,fill_min=0.95" \
+     --demand > $DAILY/build.json 2>&1
    ```
+   build.json 即新报告（含 requests_by_plate + article_mismatch 信号），
+   不再需要 parse_demand 步骤（保留兼容旧流程）。
 7. demand.json 仍有需求 → 回到第 1 步（≤2 轮）。
 8. **诚实报告**（终审 C-1d）：2 轮后仍未满足 → 列出每版 fill 与未满足请求
    （count/规格/词数），不静默退出；全文已自动尝试（fulltext_fn 优先、摘要兜底），
@@ -128,7 +143,7 @@ python3 ~/.claude/skills/imposer/scripts/rewrite.py "<summary>" <min_words> <max
 
 ## 需求-供给契约（灵魂）
 
-linotype 在 `--demand` 模式下输出 `demand.json`——每版缺什么：
+presswire 在 `--demand` 模式下输出 `demand.json`——每版缺什么（结构与 linotype 字节兼容，D2 红线）：
 
 ```json
 {"plates": {"P3": {"fill": 0.31, "deficit_pt": 84.2, "requests": [
@@ -141,12 +156,21 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 
 ## 其余信号响应
 
-| linotype 信号 | imposer 响应 |
+| presswire 信号 | imposer 响应 |
 |---|---|
-| Overfull plate 警告 | 裁段（末段起）→ 换次条 → 减简讯 |
-| autofit ✅ 收敛 | 进入 QA（pdfcheck + --visual） |
-| autofit ❌ 边界内无法放下 | 接受 + 报告用户人工决策（不硬调） |
+| 内容超出版心（framefit panic，字号固定） | **选合适长度文章**（FreshRSS 原文直用）→ 无合适 → **改写缩小**（不缩字号） |
+| 严重溢出 panic（fill > 1.05） | 裁段（末段起）→ 换次条 → 减简讯 |
+| 编译 ✅ 成功 | 进入 QA（pdfcheck + --visual） |
 | --visual ❌ 空白带 | 调配比（增/减内容）或接受 |
+
+> **字号铁律（2026-08-08 用户决策）**：正文字号固定适宜阅读（100%，不缩放）。
+> 内容放不下 → 由 imposer 层解决：优先从 FreshRSS 选**合适长度的文章**（原文直用，
+> 不加工）；无合适长度的文章时 → **改写压缩**到版心容量（agent 按改写规则执行）。
+> **绝不**用缩小字号来适配——字号适宜阅读是硬约束。
+>
+> 注: presswire autofit 模式 plate-frame 的 fill 报告失真（架构决策——收敛由
+> framefit 渲染时保证，measure 时机无高度约束）→ parse_demand 的 fills 仅参考，
+> **发单判定以 demand.json 为准**（权威信号，二者边界一致）。
 
 **反馈环**：补稿（agent 改写）→ **重新成版（build_plates）** → 重排 → 重读需求，**最多 2 轮**。仍不达标 → 停止 + 诚实报告（列出未满足需求，不静默退出）。
 
@@ -167,7 +191,7 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 - 信源清单：`scripts/sources.json`（P1 国际军事 / P2 AI 科技 / P3 太空 / P4 中国科技，全面亲中）
 - 归属铁律（2026-08-07 用户要求补日期）：`By {记者} · {站点} · {日期}`；无记者 `By {站点} News Desk · {日期}`；
   日期取素材 date（epoch/ISO/RFC2822）→ 英文格式 `Aug 6, 2026`，解析失败省略不伪造；多作者 `;` 分隔清洗为 `, ` 连接；
-  副条 STORY-B 独立署名 `BYLINE-B:`（linotype 渲染为 \storybyline/\asidestory 3 参）；
+  副条 STORY-B 独立署名 `BYLINE-B:`（presswire 渲染为 storybyline 原子）；
   简讯末尾标 `— {站点}, {日期}.`（有记者再加 `{记者} et al.,` 前缀，多作者压缩）；付费墙退 RSS 摘要标注 `[付费墙]`
 - 主栏补白（2026-08-07 用户要求：P1 主栏底部有空间就补）：P1 简讯拆 2 条 `MAINBRIEFS:`（主栏底部补白，
   正文不足栏高时 \vss 弹性贴底，填满主栏底部）+ 2 条侧栏 `BRIEFS:`；主栏补白摘要用 fulltext 前 400 字符（更满）
@@ -179,7 +203,7 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 
 ## 版面结构（每版）
 
-- P1 国际军事：main-aside（主条 2 栏 + 侧栏）+ 智库深度；**版顶出版日期线**（DATE 字段 → linotype `\dateline`，2026-08-07）
+- P1 国际军事：main-aside（主条 2 栏 + 侧栏）+ 智库深度；**版顶出版日期线**（DATE 字段 → presswire dateline 原子，2026-08-07）
 - P2 AI 科技 / P3 太空 / P4 中国科技：等宽多栏
 - 每版：中长篇主条 ×2 + 简讯 ×3-5
 
@@ -188,9 +212,9 @@ imposer 的 supply 按规格找稿：`topic`（版块题材）× `words`（字�
 ```
 $DAILY/
 ├── sources/p1-p4.md   # 信源归档（URL/记者/站点/摘要）
-├── plates/p1-p4.md    # linotype 消费
-├── out.pdf + out.log + out.tex + layout.json + demand.json
-└── fetch.log + build.log + imposer.log  # 工作日志
+├── plates/p1-p4.md    # presswire 消费
+├── out.pdf + out.typ + layout.json + demand.json
+└── fetch.log + build.json + imposer.log  # 工作日志（build.json 即排版报告）
 ```
 
 ## 诚实原则
