@@ -603,7 +603,12 @@ _JUNK_RE = re.compile(
     r"advertising terms|back to top|this page is unavailable|javascript is required|"
     # 栏目/部门页模板（2026-08-07 CSIS: 分类页当文章抓取，summary 是部门介绍）
     r"department tackles|tackles the most complex issues|featured book|"
-    r"unlocking the missing|president, economic security",
+    r"unlocking the missing|president, economic security|"
+    # 频道/平台介绍页（2026-08-08 审料门补漏: VOA 音乐电台频道页当新闻抓取）
+    r"english language music network|hear the freshest cuts|"
+    # 在线游戏广告页（2026-08-08 审料门补漏: AOL Games 页文案 'Your game
+    # will start after this ad' 直通 P2 简讯槽——补进自动门，未来不再漏）
+    r"your game will start after this ad|play spades for free",
     re.IGNORECASE,
 )
 

@@ -19,7 +19,8 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parent.parent / 'scripts'
 PRESSWIRE = Path.home() / 'news' / 'presswire'
 FIXTURES = PRESSWIRE / 'tests' / 'fixtures' / 'layouts'
-LATIN_PLATES = Path.home() / 'news' / 'latex' / 'examples' / 'plates'  # 真实溢出 12%
+LATIN_PLATES = Path.home() / 'news' / 'latex' / 'examples' / 'plates'  # 分栏/字体修复后不再溢出
+OVERFLOW_PLATES = PRESSWIRE / 'tests' / 'fixtures' / 'overflow'  # 必然溢出（1500 词）
 # 输出须在 --root 内（Typst 沙箱）→ 用 ~/news/presswire/tests/tmp-rpw-test/
 TMP_ROOT = PRESSWIRE / 'tests' / 'tmp-rpw-test'
 PY = sys.executable
@@ -55,7 +56,7 @@ def test_golden_path():
 
 def test_article_mismatch_signal():
     """长文 autofit: 退出码 1 + article_mismatch（字号固定 100% 不缩放）。"""
-    code, res, _ = _run(LATIN_PLATES, 'bad')
+    code, res, _ = _run(OVERFLOW_PLATES, 'bad')
     assert code == 1, f'长文应报文章不符合: {code}'
     assert res.get('article_mismatch') is True, f'{res}'
     assert res.get('autofit_failed') is True, f'{res}'
