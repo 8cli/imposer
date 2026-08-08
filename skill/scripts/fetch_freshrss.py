@@ -23,6 +23,7 @@ af-readability 全文扩展（Niehztog/freshrss-af-readability v0.4）：
        （2026-08-06 血泪：此格式坑 + 容器重建丢扩展文件，导致 88.7% 入库无全文）
   只处理新入库文章：改配置后需清空 entry 表 + 重置 feed.lastUpdate 全量重灌（见 SESSION-STATE）
 """
+import _bootstrap
 import argparse
 import json
 import re
@@ -175,6 +176,7 @@ def fetch_from_freshrss(sources: dict, out_dir: Path, max_items: int = 8) -> dic
 
 
 if __name__ == "__main__":
+    _bootstrap.ensure_venv()
     ap = argparse.ArgumentParser()
     ap.add_argument("sources_json")
     ap.add_argument("out_dir")

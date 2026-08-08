@@ -14,6 +14,7 @@ stdout 含 "plate-P" 行 → presswire；含 "✅ 收敛" → linotype。
 
 用法: python3 parse_demand.py <build_stdout.log> [--log <xelatex.log>] [--demand <demand.json>]
 """
+import _bootstrap
 import argparse, json, re, sys
 from pathlib import Path
 
@@ -155,6 +156,7 @@ def plate_health(fills: list[float]) -> list[str]:
 
 
 if __name__ == "__main__":
+    _bootstrap.ensure_venv()
     ap = argparse.ArgumentParser()
     ap.add_argument("build_stdout")
     ap.add_argument("--log", default=None)

@@ -14,6 +14,7 @@
 字段统一 tex_escape（含 `**x**`→`\\textbf{x}`）；预转义会造成双重转义
 （实测 `5%` 预转义后经 build.py 变 `5\\\\%`，LaTeX 渲染成换行+百分号）。
 """
+import _bootstrap
 import argparse
 import email.utils
 import json
@@ -683,6 +684,7 @@ def write_plates(results: dict, out_dir: Path, pub_date: str = "") -> None:
 
 
 if __name__ == "__main__":
+    _bootstrap.ensure_venv()
     ap = argparse.ArgumentParser()
     ap.add_argument("fetch_results")   # fetch_sources.py 的 fetch_results.json（或 supply 补充后的合并 JSON）
     ap.add_argument("out_dir")

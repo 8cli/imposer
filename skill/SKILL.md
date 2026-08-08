@@ -19,6 +19,21 @@ imposer 是 presswire 的**拼版工**：组织 4 版素材 → 调用 presswire
 
 **铁律**：材料组织与版面纪律耦合——写出的 plates 第一轮就接近版面，反馈环只是微调（≤2 轮）。
 
+## 运行时统一（2026-08-08 最后一公里）
+
+imposer 全部脚本（fetch/build_plates/supply/rewrite/parse_demand/render_presswire）
+在 `__main__` 时自动切换到统一运行时 `~/news/presswire/.venv312`（Python 3.12 +
+typst-py 0.15.0）——脚本顶部 `_bootstrap.ensure_venv()` 检测到当前解释器不是
+venv 且 venv 存在 → `os.execv` 重启到 venv（幂等，防死循环）：
+
+- **本机已初始化 .venv312** → 全流程真单进程：render_presswire 直走 typstpy
+  内存编译（无 typst CLI subprocess、无日志正则、无跨解释器委托）
+- **.venv312 缺失**（如 CI 或新机器）→ 优雅降级当前解释器，render_presswire
+  自动落到 cli 兜底（--json 字节兼容）——任何环境可跑
+- **无需手动指定解释器**：下面所有命令的 `python3` 照抄即可，自动切换对调用方无感
+- **设计约束**：仅在 `__main__` 触发（tests 以 import 方式加载脚本模块时绝不
+  re-exec）；venv 路径可用 `PRESSWIRE` 环境变量覆盖（与 render_presswire 一致）
+
 ## 快速流程（一键日报）
 
 ```bash

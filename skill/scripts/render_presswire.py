@@ -22,6 +22,7 @@
      无日志正则，一次 JSON 返回）
   3. cli 兜底: subprocess typst CLI --json（进程边界，字节兼容）
 """
+import _bootstrap
 import argparse
 import json
 import os
@@ -144,4 +145,5 @@ def main(argv=None) -> int:
 
 
 if __name__ == '__main__':
+    _bootstrap.ensure_venv()
     sys.exit(main())
